@@ -11,6 +11,9 @@ API_KEY = "13610863df3680cc4e7c70a64d752b37485535929bfa514f4ad4d71ea56e4ccb"
 KST = timezone(timedelta(hours=9))
 
 
+# ==========================================
+# 🟢 1. 데이터 가져오는 엔진 (명환이 원본 60일치!)
+# ==========================================
 @st.cache_data(ttl=600)
 def fetch_monster_announcements():
     all_raw = []
@@ -21,8 +24,7 @@ def fetch_monster_announcements():
     delta = end_date - start_date
     dates = [(start_date + timedelta(days=i)).strftime('%Y%m%d') for i in range(delta.days + 1)]
 
-    # 🚨 [엔진 업그레이드] 조달청 전용(PPSSrch) 꼬리표를 떼고,
-    # 국토부 등 모든 국가/공공기관의 건설 공고를 가져오는 '통합 마스터 주소'로 변경!
+    # 🚨 통합 마스터 주소 (국토부 등 전체)
     url = 'http://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk'
 
     def fetch_per_day(dt):
@@ -32,7 +34,7 @@ def fetch_monster_announcements():
             'type': 'json', 'serviceKey': API_KEY
         }
 
-        # 🚨 [끈기 모드] 데이터가 많아져서 서버가 튕겨내면 0.5초 쉬고 재도전!
+        # 🚨 [끈기 모드] 3번 재도전!
         for _ in range(3):
             try:
                 res = requests.get(url, params=params, verify=False, timeout=10)
@@ -44,7 +46,7 @@ def fetch_monster_announcements():
                 continue
         return []
 
-    # 🚨 일꾼 15명 유지 (안전 주행)
+    # 🚨 일꾼 15명 유지
     with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
         results = list(executor.map(fetch_per_day, dates))
         for res in results:
@@ -53,10 +55,13 @@ def fetch_monster_announcements():
     return pd.DataFrame(all_raw)
 
 
+# ==========================================
+# 🟢 2. UI 및 화면 구성
+# ==========================================
 # 1. 페이지 설정
 st.set_page_config(page_title="k_건설맵", layout="wide", initial_sidebar_state="expanded")
 
-# 2. 디자인 설정 (명환이에게 OK 받은 파란색 바 아래로 꾹 누르기!)
+# 2. 디자인 설정
 st.markdown("""
     <style>
     .block-container { padding-top: 1.5rem !important; padding-bottom: 1rem !important; }
@@ -85,6 +90,7 @@ with st.sidebar:
 # 🚀 캐시(기억 장치) 사용
 if 'master_data' not in st.session_state:
     with st.spinner("조달청에서 안전하게 2개월치 최신 공고를 싹 쓸어오는 중입니다... (조금만 기다려주세요!)"):
+        # 🚨 [버그 수정 완료] 이제 엉뚱한 nano_const를 찾지 않고, 바로 위에 있는 진짜 엔진을 씁니다!
         st.session_state['master_data'] = fetch_monster_announcements()
 
 # ==========================================
@@ -96,7 +102,7 @@ if menu == "📊 실시간 공고 (홈)":
     df = st.session_state['master_data'].copy()
 
     if not df.empty:
-        # 🚨 [명환이 지시사항] 4월 최신 날짜 무조건 1등으로 올리기 (에러값은 맨 밑으로!)
+        # 🚨 [명환이 지시사항] 4월 최신 날짜 무조건 1등으로 올리기
         df['정렬용시간'] = pd.to_datetime(df['bidNtceDt'], errors='coerce')
         df = df.sort_values(by='정렬용시간', ascending=False, na_position='last').reset_index(drop=True)
 
@@ -119,7 +125,6 @@ if menu == "📊 실시간 공고 (홈)":
         today_count = len(df[df['공고일자'] == today_str])
 
         col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
-
         with col1:
             st.metric(label="누적 공고(최근 60일)", value=f"{len(df):,}건")
         with col2:
@@ -127,7 +132,6 @@ if menu == "📊 실시간 공고 (홈)":
         with col3:
             st.metric(label="데이터 기준일", value=today_str)
         with col4:
-            # 🚨 조달청에서 진짜로 다시 가져오는 강력 새로고침 버튼
             if st.button("🔄 최신 데이터 갱신", use_container_width=True):
                 st.cache_data.clear()
                 if 'master_data' in st.session_state:
