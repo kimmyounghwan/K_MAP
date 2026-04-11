@@ -6,9 +6,6 @@ import streamlit as st
 import concurrent.futures
 import time
 
-# ==========================================
-# 🟢 1. 엔진 설정 (명환이 원본 60일치 그대로!)
-# ==========================================
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 API_KEY = "13610863df3680cc4e7c70a64d752b37485535929bfa514f4ad4d71ea56e4ccb"
 KST = timezone(timedelta(hours=9))
@@ -24,7 +21,8 @@ def fetch_monster_announcements():
     delta = end_date - start_date
     dates = [(start_date + timedelta(days=i)).strftime('%Y%m%d') for i in range(delta.days + 1)]
 
-    # 🚨 통합 마스터 주소
+    # 🚨 [엔진 업그레이드] 조달청 전용(PPSSrch) 꼬리표를 떼고,
+    # 국토부 등 모든 국가/공공기관의 건설 공고를 가져오는 '통합 마스터 주소'로 변경!
     url = 'http://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk'
 
     def fetch_per_day(dt):
@@ -52,9 +50,7 @@ def fetch_monster_announcements():
     return pd.DataFrame(all_raw)
 
 
-# ==========================================
-# 🟢 2. UI 디자인 & 화면 구성 (명환이 원본 그대로!)
-# ==========================================
+# UI 및 화면 구성
 st.set_page_config(page_title="k_건설맵", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
@@ -80,12 +76,11 @@ with st.sidebar:
     st.write("---")
     st.info("💡 최초 1회 로딩 시 조달청 데이터를 가져오느라 약간 느릴 수 있습니다.")
 
-# 데이터 엔진 연결
+# 데이터 가져오기
 if 'master_data' not in st.session_state:
     with st.spinner("조달청에서 안전하게 2개월치 최신 공고를 싹 쓸어오는 중입니다..."):
         st.session_state['master_data'] = fetch_monster_announcements()
 
-# --- 메인 화면 로직 ---
 if menu == "📊 실시간 공고 (홈)":
     st.markdown('<div class="blue-bar"><p>🏛️ k_건설맵 실시간 현황판</p></div>', unsafe_allow_html=True)
 
