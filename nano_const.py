@@ -15,9 +15,9 @@ KST = timezone(timedelta(hours=9))
 def fetch_monster_announcements():
     all_raw = []
 
-    # 📅 딱 2개월(60일) 전부터 오늘까지!
+    # 📅 딱 3일 전부터 오늘까지! (타임아웃 방지용 가벼운 세팅)
     end_date = datetime.now(KST).date()
-    start_date = end_date - timedelta(days=60)
+    start_date = end_date - timedelta(days=3) # 🚨 <--- 딱 이 부분만 60에서 3으로 수정했어!
     delta = end_date - start_date
     dates = [(start_date + timedelta(days=i)).strftime('%Y%m%d') for i in range(delta.days + 1)]
 
