@@ -6,7 +6,7 @@ import nano_const
 # 1. 페이지 설정
 st.set_page_config(page_title="k_건설맵", layout="wide", initial_sidebar_state="expanded")
 
-# 2. 디자인 설정 (명환이에게 OK 받은 파란색 바 아래로 꾹 누르기!)
+# 2. 디자인 설정
 st.markdown("""
     <style>
     .block-container { padding-top: 1.5rem !important; padding-bottom: 1rem !important; }
@@ -30,11 +30,11 @@ with st.sidebar:
     st.markdown("### 🏛️ k_건설맵 메뉴")
     menu = st.radio("이동할 페이지를 선택하세요:", ["📊 실시간 공고 (홈)", "📝 자유 게시판", "👤 로그인 / 회원가입"])
     st.write("---")
-    st.info("💡 최초 1회 로딩 시 조달청 데이터를 가져오느라 약간 느릴 수 있습니다. 이후에는 0.1초 만에 짱 빠르게 열립니다!")
+    st.info("💡 최초 1회 로딩 시 조달청 데이터를 가져오느라 약간 느릴 수 있습니다. 이후에는 0.1초 만에 열립니다!")
 
 # 🚀 캐시(기억 장치) 사용
 if 'master_data' not in st.session_state:
-    with st.spinner("조달청에서 안전하게 2개월치 최신 공고를 싹 쓸어오는 중입니다... (조금만 기다려주세요!)"):
+    with st.spinner("조달청 앞문을 열고 최신 공고를 싹 쓸어오는 중입니다... (조금만 기다려주세요!)"):
         st.session_state['master_data'] = nano_const.fetch_monster_announcements()
 
 # =========================================
@@ -46,7 +46,7 @@ if menu == "📊 실시간 공고 (홈)":
     df = st.session_state['master_data'].copy()
 
     if not df.empty:
-        # 🚨 [명환이 지시사항] 4월 최신 날짜 무조건 1등으로 올리기 (에러값은 맨 밑으로!)
+        # 🚨 최신 날짜 1등으로 올리기
         df['정렬용시간'] = pd.to_datetime(df['bidNtceDt'], errors='coerce')
         df = df.sort_values(by='정렬용시간', ascending=False, na_position='last').reset_index(drop=True)
 
@@ -71,13 +71,12 @@ if menu == "📊 실시간 공고 (홈)":
 
         col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
         with col1:
-            st.metric(label="누적 공고(최근 60일)", value=f"{len(df):,}건")
+            st.metric(label="누적 공고(최근 7일)", value=f"{len(df):,}건")
         with col2:
             st.metric(label="오늘(TODAY) 신규", value=f"{today_count}건")
         with col3:
             st.metric(label="데이터 기준일", value=today_str)
         with col4:
-            # 🚨 조달청에서 진짜로 다시 가져오는 강력 새로고침 버튼
             if st.button("🔄 최신 데이터 갱신", use_container_width=True):
                 st.cache_data.clear()
                 if 'master_data' in st.session_state:

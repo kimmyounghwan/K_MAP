@@ -1,54 +1,78 @@
 import requests
+from bs4 import BeautifulSoup
 import pandas as pd
 from datetime import datetime, timedelta, timezone
+import urllib.parse
 import urllib3
 import streamlit as st
 import time
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-API_KEY = "13610863df3680cc4e7c70a64d752b37485535929bfa514f4ad4d71ea56e4ccb"
 KST = timezone(timedelta(hours=9))
 
 
 @st.cache_data(ttl=600)
 def fetch_monster_announcements():
-    all_raw = []
+    all_bids = []
 
-    # 📅 딱 2개월(60일) 전부터 오늘까지!
-    end_date = datetime.now(KST).date()
-    start_date = end_date - timedelta(days=60)
-    delta = end_date - start_date
-    dates = [(start_date + timedelta(days=i)).strftime('%Y%m%d') for i in range(delta.days + 1)]
+    # 📅 크롤링은 하나씩 읽어야 해서 속도가 느려. 일단 안전하게 최근 7일치만!
+    end_date = datetime.now(KST).strftime('%Y/%m/%d')
+    start_date = (datetime.now(KST) - timedelta(days=7)).strftime('%Y/%m/%d')
 
-    # 🚨 [엔진 업그레이드] 조달청 전용(PPSSrch) 꼬리표를 떼고,
-    # 국토부 등 모든 국가/공공기관의 건설 공고를 가져오는 '통합 마스터 주소'로 변경!
-    url = 'http://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk'
+    # 🚩 나라장터 앞문(메인 홈페이지) 검색 주소
+    base_url = "https://www.g2b.go.kr:8101/ep/tbid/tbidList.do"
 
-    def fetch_per_day(dt):
-        params = {
-            'inqryDiv': '1', 'inqryBgnDt': f'{dt}0000', 'inqryEndDt': f'{dt}2359',
-            'pageNo': '1', 'numOfRows': '999', 'bidNtceNm': '공사',
-            'type': 'json', 'serviceKey': API_KEY
-        }
+    # 블로그에서 쓴 파라미터 그대로 적용 (공사 검색)
+    params = {
+        "taskClCds": "3",  # 3 = 공사
+        "bidNm": "",  # 전체 공사
+        "searchDtType": "1",
+        "fromBidDt": start_date,
+        "toBidDt": end_date,
+        "fromOpenBidDt": "",
+        "toOpenBidDt": "",
+        "radOrgan": "1",
+        "instNm": "",
+        "area": "",
+        "regYn": "Y",
+        "bidSearchType": "1",
+        "searchType": "1"
+    }
 
-        # 🚨 [끈기 모드] 데이터가 많아져서 서버가 튕겨내면 0.5초 쉬고 재도전!
-        for _ in range(3):
-            try:
-                res = requests.get(url, params=params, verify=False, timeout=10)
-                if res.status_code == 200:
-                    items = res.json().get('response', {}).get('body', {}).get('items', [])
-                    return items if items else []
-            except:
-                time.sleep(0.5)
-                continue
-        return []
+    encoded_params = urllib.parse.urlencode(params, encoding='euc-kr')
+    url = f"{base_url}?{encoded_params}"
 
-    # 🚨 [나노의 수정] 일꾼 15명 해고! 조달청이 공격으로 오해하지 않게 순서대로 하나씩 묻기
-    for dt in dates:
-        res = fetch_per_day(dt)
-        if res:
-            all_raw.extend(res)
-        # 차단을 피하기 위한 0.3초 매너 휴식
-        time.sleep(0.3)
+    try:
+        # 나라장터 메인 홈페이지에 접속!
+        response = requests.get(url, verify=False, timeout=30)
+        soup = BeautifulSoup(response.content, 'html.parser')
 
-    return pd.DataFrame(all_raw)
+        # 테이블에서 데이터 뽑아내기
+        rows = soup.select('table.table_list tr')[1:]  # 첫 번째 행(헤더) 제외
+
+        for row in rows:
+            cols = row.select('td')
+            if len(cols) >= 5:
+                # K-건설맵 UI에 맞게 이름 맞추기
+                공고번호 = cols[1].text.strip()
+                공고명 = cols[2].text.strip()
+                수요기관 = cols[3].text.strip()
+                마감일시 = cols[4].text.strip()
+
+                # 링크 주소 만들기
+                상세링크 = f"https://www.g2b.go.kr:8081/ep/invitation/publish/bidInfoDtl.do?bidno={공고번호[:11]}&bidseq={공고번호[12:]}"
+
+                all_bids.append({
+                    'bidNtceNo': 공고번호,
+                    'bidNtceNm': 공고명,
+                    'ntceInsttNm': 수요기관,
+                    'bidNtceDt': 마감일시,
+                    'bdgtAmt': "0",  # 리스트 화면엔 예산이 없어서 0으로 처리 (크롤링 한계)
+                    'bidNtceDtlUrl': 상세링크
+                })
+
+    except Exception as e:
+        st.session_state['debug_text'] = f"크롤링 에러 발생: {str(e)}"
+        pass
+
+    return pd.DataFrame(all_bids)

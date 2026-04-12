@@ -1,4 +1,5 @@
 streamlit
 pandas
 requests
-gspread
+urllib3
+beautifulsoup4
