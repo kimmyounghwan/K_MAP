@@ -1,12 +1,18 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, timezone
-import nano_const
+import engine
 
+# 스트림릿 설정 (무조건 최상단!)
 st.set_page_config(page_title="k_건설맵", layout="wide", initial_sidebar_state="expanded")
+
 KST = timezone(timedelta(hours=9))
 
-st.markdown("""<style>.blue-bar { background-color: #1e3a8a; color: white; border-radius: 8px; text-align: center; padding: 25px; font-weight: 900; font-size: 30px; margin-bottom: 20px; }</style>""", unsafe_allow_html=True)
+st.markdown("""
+    <style>
+    .blue-bar { background-color: #1e3a8a; color: white; border-radius: 8px; text-align: center; padding: 25px; font-weight: 900; font-size: 30px; margin-bottom: 20px; }
+    </style>
+""", unsafe_allow_html=True)
 
 with st.sidebar:
     st.markdown("### 🏛️ k_건설맵 메뉴")
@@ -20,7 +26,7 @@ if menu == "📊 실시간 공고 (홈)":
     st.markdown('<div class="blue-bar">🏛️ k_건설맵 하이브리드 현황판</div>', unsafe_allow_html=True)
     if 'master_data' not in st.session_state:
         with st.spinner("데이터를 가져오는 중..."):
-            st.session_state['master_data'] = nano_const.get_final_data()
+            st.session_state['master_data'] = engine.get_final_data()
 
     df = st.session_state['master_data'].copy()
     if not df.empty:
