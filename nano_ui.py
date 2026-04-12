@@ -1,13 +1,11 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, timezone
-import nano_const  # 🚨 [여기!] 이 한 줄이 nano_const.py 파일을 불러오는 연결고리야!
+import nano_const
 
-# 스트림릿 설정 (무조건 최상단)
 st.set_page_config(page_title="k_건설맵", layout="wide", initial_sidebar_state="expanded")
 KST = timezone(timedelta(hours=9))
 
-# 디자인 바 설정
 st.markdown("""<style>.blue-bar { background-color: #1e3a8a; color: white; border-radius: 8px; text-align: center; padding: 25px; font-weight: 900; font-size: 30px; margin-bottom: 20px; }</style>""", unsafe_allow_html=True)
 
 with st.sidebar:
@@ -22,10 +20,9 @@ if menu == "📊 실시간 공고 (홈)":
     st.markdown('<div class="blue-bar">🏛️ k_건설맵 하이브리드 현황판</div>', unsafe_allow_html=True)
     if 'master_data' not in st.session_state:
         with st.spinner("데이터를 가져오는 중..."):
-            # 🚨 nano_const.py 안에 있는 함수를 호출함!
             st.session_state['master_data'] = nano_const.get_final_data()
 
-    df = st.session_state['master_data']
+    df = st.session_state['master_data'].copy()
     if not df.empty:
         df['정렬용'] = pd.to_datetime(df['공고일시'], errors='coerce')
         df = df.sort_values(by='정렬용', ascending=False).reset_index(drop=True)

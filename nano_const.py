@@ -12,7 +12,6 @@ KST = timezone(timedelta(hours=9))
 API_KEY = "13610863df3680cc4e7c70a64d752b37485535929bfa514f4ad4d71ea56e4ccb"
 
 
-# API로 가져오기
 def fetch_via_api(days=15):
     all_raw = []
     url = 'http://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk'
@@ -39,7 +38,6 @@ def fetch_via_api(days=15):
                               'bdgtAmt': '예산금액'})
 
 
-# 홈페이지 앞문 뚫기 (크롤링)
 def fetch_via_crawling(days=7):
     all_bids = []
     end_date = datetime.now(KST).strftime('%Y/%m/%d')
@@ -63,7 +61,6 @@ def fetch_via_crawling(days=7):
     return pd.DataFrame(all_bids)
 
 
-# 최종 합치기 함수
 @st.cache_data(ttl=600)
 def get_final_data():
     df = fetch_via_api(days=15)
