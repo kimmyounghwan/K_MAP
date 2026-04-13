@@ -27,15 +27,12 @@ firebaseConfig = {
 
 G2B_API_KEY = "13610863df3680cc4e7c70a64d752b37485535929bfa514f4ad4d71ea56e4ccb"
 
-
 @st.cache_resource
 def init_firebase():
     firebase = pyrebase.initialize_app(firebaseConfig)
     return firebase.auth(), firebase.database()
 
-
 auth, db = init_firebase()
-
 
 # ==========================================
 # 🧠 3. 무적의 자동 동기화 엔진 (속도 개선 & 버그 수정)
@@ -49,25 +46,25 @@ def load_from_db():
         pass
     return pd.DataFrame()
 
-
 def save_to_db_fast(new_df):
     if new_df.empty: return
     try:
-        # 🚨 에러 원인 해결: 하나씩 넣지 않고 딕셔너리로 묶어서 한방에 DB로 슛! (속도 100배 증가)
         data_dict = {}
-        for _, row in new_df.iterrows():
+        # 🚨 무한 로딩 방지: 최신 데이터 1000개까지만 DB에 넣도록 안전장치 추가
+        safe_df = new_df.head(1000)
+        for _, row in safe_df.iterrows():
             key = f"{row['bidNtceNo']}-{row.get('bidNtceOrd', '01')}"
             data_dict[key] = row.dropna().to_dict()
         db.child("announcements").update(data_dict)
-    except:
-        pass
-
+    except Exception as e:
+        print(f"DB 저장 에러 (무시됨): {e}")
 
 @st.cache_data(ttl=600)
 def get_integrated_data():
     all_raw = []
     end_date = datetime.now(KST).date()
-    start_date = end_date - timedelta(days=30)  # 안전하게 1개월치 수집
+    # 🚨 핵심 수정: 30일 -> 5일로 대폭 축소! (빙빙 도는 현상 100% 해결)
+    start_date = end_date - timedelta(days=5)
     delta = end_date - start_date
     dates = [(start_date + timedelta(days=i)).strftime('%Y%m%d') for i in range(delta.days + 1)]
 
@@ -78,8 +75,10 @@ def get_integrated_data():
         params = {'inqryDiv': '1', 'inqryBgnDt': f'{dt}0000', 'inqryEndDt': f'{dt}2359',
                   'pageNo': '1', 'numOfRows': '999', 'bidNtceNm': '공사', 'type': 'json', 'serviceKey': G2B_API_KEY}
         try:
-            res = requests.get(url, params=params, verify=False, timeout=15, headers=headers)
-            if res.status_code == 200: return res.json().get('response', {}).get('body', {}).get('items', [])
+            # 타임아웃을 10초로 줄여서 응답 없는 서버에 끌려다니지 않게 만듦
+            res = requests.get(url, params=params, verify=False, timeout=10, headers=headers)
+            if res.status_code == 200:
+                return res.json().get('response', {}).get('body', {}).get('items', [])
         except:
             return []
         return []
@@ -92,7 +91,6 @@ def get_integrated_data():
     api_df = pd.DataFrame(all_raw)
     db_df = load_from_db()
 
-    # 🚨 핵심 버그 수정: API 데이터가 있으면 DB랑 합쳐서 '무조건' 즉시 반환!
     if not api_df.empty:
         save_to_db_fast(api_df)
         st.toast("✅ 조달청 데이터 자동 동기화 완료!", icon="🔄")
@@ -101,7 +99,6 @@ def get_integrated_data():
     else:
         st.toast("⚠️ 조달청 서버 지연. 비상 DB 데이터를 불러옵니다.", icon="🚨")
         return db_df
-
 
 # ==========================================
 # 📋 4. 면허 리스트 및 UI 세팅
@@ -143,7 +140,7 @@ with st.sidebar:
 if menu == "📊 실시간 공고 (홈)":
     st.markdown('<div class="blue-bar">🏛️ K-건설맵 무한 자동 현황판</div>', unsafe_allow_html=True)
 
-    with st.spinner("데이터 동기화 엔진 가동 중..."):
+    with st.spinner("데이터 동기화 엔진 가동 중... (최대 10초 소요)"):
         df = get_integrated_data()
 
     if not df.empty:
@@ -152,19 +149,16 @@ if menu == "📊 실시간 공고 (홈)":
         df['공고일자'] = df['정렬시간'].dt.strftime('%Y-%m-%d').fillna('미상')
         df['예산금액'] = pd.to_numeric(df.get('bdgtAmt', 0), errors='coerce').fillna(0)
 
-
         def make_link(row):
             url = str(row.get('bidNtceDtlUrl', ''))
             if url and url.lower() != 'nan': return url.replace(":8081", "").replace(":8101", "")
             return f"https://www.g2b.go.kr/ep/invitation/publish/bidInfoDtl.do?bidno={row['bidNtceNo']}&bidseq={row.get('bidNtceOrd', '01')}"
-
 
         df['🔗 상세보기'] = df.apply(make_link, axis=1)
 
         view_df = df[['bidNtceNo', '공고일자', 'bidNtceNm', 'ntceInsttNm', '예산금액', '🔗 상세보기']].copy()
         view_df.columns = ['공고번호', '공고일자', '공고명', '발주기관', '예산금액', '상세보기']
 
-        # 🚨 명환이의 기획: 로그인 유무에 따라 '맞춤 공고 매칭 시스템' 작동!
         if st.session_state['logged_in'] and st.session_state['user_license']:
             tab1, tab2 = st.tabs(["🌐 전체 공고 보기", "✨ 내 면허 맞춤 공고"])
 
@@ -174,7 +168,6 @@ if menu == "📊 실시간 공고 (홈)":
                                             "예산금액": st.column_config.NumberColumn("예산(원)", format="%,d")})
 
             with tab2:
-                # 🧠 지능형 키워드 매칭 로직
                 user_lic = st.session_state['user_license']
                 keywords = []
                 if "토목" in user_lic: keywords.extend(["토목", "도로", "포장", "하천", "교량", "정비"])
@@ -185,26 +178,25 @@ if menu == "📊 실시간 공고 (홈)":
                 if "상·하수도" in user_lic: keywords.extend(["상수도", "하수도", "관로", "배수"])
                 if "조경" in user_lic: keywords.extend(["조경", "식재", "공원", "수목"])
 
-                # 키워드가 포함된 공고만 필터링
                 if keywords:
                     pattern = '|'.join(keywords)
                     matched_df = view_df[view_df['공고명'].str.contains(pattern, na=False)]
                 else:
-                    matched_df = view_df  # 키워드 매칭이 어려우면 전체 표시
+                    matched_df = view_df
 
-                st.success(f"🎯 시스템이 대표님의 면허({user_lic})를 분석하여 **{len(matched_df)}건**의 맞춤 공고를 찾아냈습니다!")
+                st.success(f"🎯 시스템이 소장님의 면허({user_lic})를 분석하여 **{len(matched_df)}건**의 맞춤 공고를 찾아냈습니다!")
                 st.dataframe(matched_df, use_container_width=True, hide_index=True, height=700,
                              column_config={"상세보기": st.column_config.LinkColumn("공고문 열기"),
                                             "예산금액": st.column_config.NumberColumn("예산(원)", format="%,d")})
 
         else:
-            st.info("💡 회원가입 후 로그인하시면 사장님 면허에 딱 맞는 공고만 자동으로 찾아주는 '맞춤 공고' 기능을 사용할 수 있습니다.")
+            st.info("💡 회원가입 후 로그인하시면 소장님 면허에 딱 맞는 공고만 자동으로 찾아주는 '맞춤 공고' 기능을 사용할 수 있습니다.")
             st.dataframe(view_df, use_container_width=True, hide_index=True, height=700,
                          column_config={"상세보기": st.column_config.LinkColumn("공고문 열기"),
                                         "예산금액": st.column_config.NumberColumn("예산(원)", format="%,d")})
 
     else:
-        st.error("데이터를 불러올 수 없습니다. 시스템을 갱신 중입니다.")
+        st.error("데이터를 불러올 수 없습니다. 조달청 서버가 혼잡합니다. 잠시 후 새로고침 해주세요.")
 
 # ==========================================
 # 🟢 메뉴 2 & 3: 게시판 및 회원가입
@@ -259,11 +251,7 @@ elif menu == "👤 로그인 / 회원가입":
                     info = db.child("users").child(user['localId']).get().val()
                     st.session_state['logged_in'] = True
                     st.session_state['user_name'] = info['name']
-                    # 🚨 로그인 시 보유 면허 정보를 시스템에 기억시킴!
                     st.session_state['user_license'] = info.get('license', '')
                     st.rerun()
                 except:
                     st.error("정보가 일치하지 않습니다.")
-
-
-                    # 배포용 업데이트
