@@ -3,7 +3,6 @@ import pandas as pd
 import requests
 import pyrebase
 import urllib3
-import time
 from datetime import datetime, timedelta, timezone
 
 # 1. 보안 및 페이지 설정
@@ -37,7 +36,7 @@ auth, db = init_firebase()
 
 
 # ==========================================
-# 🧠 3. 절대 멈추지 않는 동기화 엔진 (안전 모드)
+# 🧠 3. 명환표 '스마트 주/야간 모드' 동기화 엔진
 # ==========================================
 
 def load_from_db():
@@ -53,46 +52,52 @@ def save_to_db_fast(new_df):
     if new_df.empty: return
     try:
         data_dict = {}
-        safe_df = new_df.head(500)  # 안전하게 최대 500개만 저장
+        safe_df = new_df.head(500)  # 평일에 최대 500개씩 안전하게 누적 저장
         for _, row in safe_df.iterrows():
             key = f"{row['bidNtceNo']}-{row.get('bidNtceOrd', '01')}"
             data_dict[key] = row.dropna().to_dict()
         db.child("announcements").update(data_dict)
-    except Exception as e:
-        print(f"DB 저장 에러: {e}")
+    except:
+        pass
 
 
 @st.cache_data(ttl=300)
 def get_integrated_data():
-    api_df = pd.DataFrame()
-
-    # 🚨 극약 처방: 딱 '오늘 하루치'만 요청하고, 3초 안에 응답 안 주면 즉시 무시!
-    try:
-        today = datetime.now(KST).strftime('%Y%m%d')
-        url = 'http://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk'
-        headers = {"User-Agent": "Mozilla/5.0"}
-        params = {'inqryDiv': '1', 'inqryBgnDt': f'{today}0000', 'inqryEndDt': f'{today}2359',
-                  'pageNo': '1', 'numOfRows': '100', 'bidNtceNm': '공사', 'type': 'json', 'serviceKey': G2B_API_KEY}
-
-        # timeout=3 설정으로 서버가 멈추는 현상 완벽 차단
-        res = requests.get(url, params=params, verify=False, timeout=3, headers=headers)
-        if res.status_code == 200:
-            raw_data = res.json().get('response', {}).get('body', {}).get('items', [])
-            if raw_data:
-                api_df = pd.DataFrame(raw_data)
-    except Exception as e:
-        print(f"조달청 서버 응답 없음 (무시됨): {e}")
+    now = datetime.now(KST)
+    is_weekday = now.weekday() < 5  # 월(0) ~ 금(4)
+    is_working_hour = 8 <= now.hour < 18  # 오전 8시 ~ 오후 5시 59분
 
     db_df = load_from_db()
 
-    # 결과 합치기
-    if not api_df.empty:
-        save_to_db_fast(api_df)
-        combined_df = pd.concat([api_df, db_df]).drop_duplicates(subset=['bidNtceNo'], keep='first')
-        return combined_df
+    # ☀️ 평일 주간 모드 (조달청 접속 시도)
+    if is_weekday and is_working_hour:
+        api_df = pd.DataFrame()
+        try:
+            today = now.strftime('%Y%m%d')
+            url = 'http://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk'
+            headers = {"User-Agent": "Mozilla/5.0"}
+            params = {'inqryDiv': '1', 'inqryBgnDt': f'{today}0000', 'inqryEndDt': f'{today}2359',
+                      'pageNo': '1', 'numOfRows': '100', 'bidNtceNm': '공사', 'type': 'json', 'serviceKey': G2B_API_KEY}
+
+            # 주간이라도 3초 이상 안 주면 쿨하게 끊음
+            res = requests.get(url, params=params, verify=False, timeout=3, headers=headers)
+            if res.status_code == 200:
+                raw_data = res.json().get('response', {}).get('body', {}).get('items', [])
+                if raw_data:
+                    api_df = pd.DataFrame(raw_data)
+        except Exception as e:
+            print(f"조달청 주간 지연: {e}")
+
+        if not api_df.empty:
+            save_to_db_fast(api_df)
+            combined_df = pd.concat([api_df, db_df]).drop_duplicates(subset=['bidNtceNo'], keep='first')
+            return combined_df, "주간"
+        else:
+            return db_df, "주간지연"
+
+    # 🌙 야간/주말 모드 (조달청 접속 안 함, 무조건 DB 로딩)
     else:
-        st.toast("⚠️ 조달청 서버 연결 지연. 기존 보관된 데이터를 표시합니다.", icon="🚨")
-        return db_df
+        return db_df, "야간"
 
 
 # ==========================================
@@ -133,10 +138,18 @@ with st.sidebar:
 # 🟢 메뉴 1: 메인 화면
 # ==========================================
 if menu == "📊 실시간 공고 (홈)":
-    st.markdown('<div class="blue-bar">🏛️ K-건설맵 무한 자동 현황판</div>', unsafe_allow_html=True)
+    st.markdown('<div class="blue-bar">🏛️ K-건설맵 자동 현황판</div>', unsafe_allow_html=True)
 
-    with st.spinner("데이터 동기화 중... (최대 3초 소요)"):
-        df = get_integrated_data()
+    with st.spinner("데이터 동기화 중..."):
+        df, mode = get_integrated_data()
+
+    # 상태 알림창 표시
+    if mode == "야간":
+        st.info("🌙 **야간/주말 모드 작동 중:** 현재 조달청 서버 휴식 시간입니다. 평일 주간에 수집된 최신 데이터를 아주 빠르게 표시합니다.", icon="⚡")
+    elif mode == "주간지연":
+        st.warning("⚠️ **주간 모드:** 조달청 서버 응답이 늦어, 보관된 데이터를 우선 표시합니다.", icon="⏳")
+    elif mode == "주간":
+        st.success("☀️ **주간 모드:** 조달청과 실시간 동기화 완료!", icon="🔄")
 
     if not df.empty:
         df['정렬시간'] = pd.to_datetime(df.get('bidNtceDt', ''), errors='coerce')
@@ -191,8 +204,7 @@ if menu == "📊 실시간 공고 (홈)":
                          column_config={"상세보기": st.column_config.LinkColumn("공고문 열기"),
                                         "예산금액": st.column_config.NumberColumn("예산(원)", format="%,d")})
     else:
-        # 데이터가 아예 없을 때 (파이어베이스도 비어있고 API도 실패) 무한 로딩 대신 에러 메시지 표출
-        st.error("현재 조달청 서버 접속이 원활하지 않으며, 보관된 데이터가 없습니다. 잠시 후 [데이터 새로고침]을 눌러주세요.")
+        st.error("보관된 데이터가 없습니다. 평일 주간에 최초 1회 데이터 수집이 필요합니다.")
 
 # ==========================================
 # 🟢 메뉴 2 & 3: 게시판 및 회원가입
