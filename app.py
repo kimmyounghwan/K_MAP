@@ -264,3 +264,5 @@ elif menu == "👤 로그인 / 회원가입":
                     st.rerun()
                 except:
                     st.error("정보가 일치하지 않습니다.")
+
+                    # 배포용 업데이트
