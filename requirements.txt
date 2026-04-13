@@ -1,7 +1,7 @@
 streamlit
 pandas
-requests
-urllib3
 beautifulsoup4
 pyrebase4
 setuptools==69.5.1
+urllib3==1.26.15
+requests==2.28.1
