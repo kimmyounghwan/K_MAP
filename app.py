@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 # 1. 보안 및 페이지 기본 설정
 # ==========================================
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-st.set_page_config(page_title="K-건설맵 V7.4 Master", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="K-건설맵 V7.5 Master", layout="wide", initial_sidebar_state="expanded")
 KST = timezone(timedelta(hours=9))
 
 # ==========================================
@@ -106,12 +106,10 @@ def get_hybrid_1st_bids():
             bid_no = item.get('bidNtceNo', '')
             corp = str(item.get('opengCorpInfo', '')).split('^')
             if len(corp) > 1:
-                # 💡 [투찰금액 콤마 세팅] 숫자로 변환해서 콤마 찍기
                 try:
                     raw_price = corp[3].strip()
                     formatted_price = f"{int(raw_price):,}원"
                 except:
-                    # 만약 숫자가 아닌 이상한 값이 들어있으면 그냥 원본 출력
                     formatted_price = corp[3].strip() if len(corp) > 3 else '-'
 
                 new_rows[bid_no] = {
@@ -120,7 +118,7 @@ def get_hybrid_1st_bids():
                     '날짜': item.get('opengDt', ''),
                     '공고명': item.get('bidNtceNm', ''),
                     '발주기관': item.get('ntceInsttNm', ''),
-                    '투찰금액': formatted_price,  # 👈 투찰금액 탑재!
+                    '투찰금액': formatted_price,
                     '투찰률': f"{corp[4].strip()}%" if len(corp) >= 5 else '-'
                 }
         except:
@@ -134,7 +132,13 @@ def get_hybrid_1st_bids():
 
     combined = list(new_rows.values()) + db_items
     df = pd.DataFrame(combined)
+
     if not df.empty:
+        # 💡 [V7.5 에러 방지 핵심] 과거 DB 데이터에 '투찰금액' 열이 없을 경우 '-'로 채움!
+        if '투찰금액' not in df.columns:
+            df['투찰금액'] = '-'
+        df['투찰금액'] = df['투찰금액'].fillna('-')
+
         df = df.drop_duplicates(subset=['공고번호']).copy()
         df['dt'] = pd.to_datetime(df['날짜'], errors='coerce')
         df = df[df['dt'] >= cutoff_dt]
@@ -157,7 +161,6 @@ def get_hybrid_live_bids():
 
     url = 'http://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk'
 
-    # 💡 오늘(당일) 공고만 집중 조회
     s_dt = now.strftime('%Y%m%d')
     e_dt = now.strftime('%Y%m%d')
     api_items = fetch_api_fast(url, {'serviceKey': SAFE_API_KEY, 'numOfRows': '999', 'pageNo': '1', 'inqryDiv': '1',
@@ -219,7 +222,6 @@ st.markdown(
 update_stats()
 m_visit, t_user = get_stats()
 
-# 상단 배너 문구 'K-건설맵' 유지
 st.markdown('<div class="main-title">🏛️ K-건설맵</div>', unsafe_allow_html=True)
 
 c1, c2, c3, c4 = st.columns(4)
@@ -269,7 +271,6 @@ if menu == "🏆 1순위 현황판":
     with st.spinner("하이브리드 엔진 가동 중..."):
         df_w = get_hybrid_1st_bids()
     if not df_w.empty:
-        # 💡 [표 출력 화면에 투찰금액 열 추가]
         st.dataframe(df_w[['1순위업체', '날짜', '공고명', '발주기관', '투찰금액', '투찰률']], use_container_width=True, hide_index=True,
                      height=650)
     else:
@@ -301,7 +302,6 @@ elif menu == "📊 실시간 공고 (홈)":
             with tab2:
                 user_lic = st.session_state['user_license']
                 keywords = []
-                # 매칭 키워드 유지
                 if "토목" in user_lic: keywords.extend(["토목", "도로", "포장", "하천", "교량", "정비", "관로", "상수도", "하수도", "부대시설"])
                 if "건축" in user_lic: keywords.extend(["건축", "신축", "증축", "보수", "인테리어", "환경개선", "방수", "도장"])
                 if "철근" in user_lic or "콘크리트" in user_lic: keywords.extend(
@@ -386,5 +386,3 @@ elif menu == "👤 로그인 / 회원가입":
                     st.error("가입되지 않은 이메일이거나 시스템 오류가 발생했습니다.")
             else:
                 st.warning("먼저 위쪽에 '가입한 이메일'을 입력한 뒤 이 버튼을 눌러주세요.")
-
-
