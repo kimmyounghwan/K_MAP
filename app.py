@@ -76,7 +76,7 @@ ALL_LICENSES = ["[종합] 건축공사업", "[종합] 토목공사업", "[종합
 
 def get_match_keywords(license_str):
     k = []
-    if "토목" in license_str: k.extend(["토목", "도로", "포장", "하천", "교량", "단지 조성", "부대시설", "정비", "관로", "상수도", "하수도"])
+    if "토목" in license_str: k.extend(["토목", "도로", "포장", "하천", "교량", "단지", "부대시설", "정비", "관로", "상수도", "하수도"])
     if "건축" in license_str: k.extend(["건축", "신축", "증축", "보수", "인테리어", "환경개선", "방수", "도장"])
     if "조경" in license_str: k.extend(["조경", "식재", "공원", "수목", "벌목", "놀이터"])
     if "전기" in license_str: k.extend(["전기", "배전", "가로등", "CCTV", "태양광", "신호등"])
@@ -87,7 +87,7 @@ def get_match_keywords(license_str):
 
 
 # ==========================================
-# 4. 유틸 및 데이터 엔진
+# 4. 유틸 함수 (NameError 방지를 위해 최상단 배치)
 # ==========================================
 def safe_fmt_amt(raw):
     r = str(raw).strip()
@@ -103,6 +103,20 @@ def safe_str(raw, default="정보없음"):
     return r if r and r not in ('None', 'nan', 'NaN', '') else default
 
 
+# [NameError 완벽 해결] 필터 함수가 가장 먼저 실행되도록 위로 끌어올림
+def filter_by_region(df, selected_region):
+    if selected_region == "전국(전체)": return df
+    region_keywords = {"서울": ["서울"], "부산": ["부산"], "대구": ["대구"], "인천": ["인천"], "광주": ["광주"], "대전": ["대전"], "울산": ["울산"],
+                       "세종": ["세종"], "경기": ["경기", "경기도"], "강원": ["강원", "강원도"], "충북": ["충북", "충청북도"],
+                       "충남": ["충남", "충청남도"], "전북": ["전북", "전라북도"], "전남": ["전남", "전라남도"], "경북": ["경북", "경상북도"],
+                       "경남": ["경남", "경상남도"], "제주": ["제주"]}
+    pattern = '|'.join(region_keywords.get(selected_region, [selected_region]))
+    return df[df['발주기관'].str.contains(pattern, na=False) | df['공고명'].str.contains(pattern, na=False)]
+
+
+# ==========================================
+# 5. 통계 엔진
+# ==========================================
 def get_stats():
     try:
         t_v = db.child("stats").child("total_visits").get().val() or 1828
@@ -114,7 +128,6 @@ def get_stats():
 
 def update_stats():
     try:
-        now = datetime.now(KST)
         if 'visited' not in st.session_state:
             t_v = (db.child("stats").child("total_visits").get().val() or 1828) + 1
             db.child("stats").update({"total_visits": t_v})
@@ -134,7 +147,7 @@ def fetch_api_fast(url, params):
 
 
 # ==========================================
-# 5. 1순위 / 실시간 엔진 (15일 확장판)
+# 6. 1순위 / 실시간 엔진 (15일 확장판)
 # ==========================================
 @st.cache_data(ttl=180, show_spinner=False)
 def get_hybrid_1st_bids():
@@ -213,7 +226,7 @@ def get_hybrid_live_bids():
 
 
 # ==========================================
-# 6. ★ 핵심 엔진 (상세정보 추출 완벽 픽스) ★
+# 7. ★ 핵심 엔진 (추정가격 복구 완벽 픽스) ★
 # ==========================================
 def fetch_bid_full_detail(bid_no, base_ord, row):
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -230,20 +243,7 @@ def fetch_bid_full_detail(bid_no, base_ord, row):
             return [obj]
         return []
 
-    # [수정] 조달청 API 에러 방지를 위해 inqryDiv 제거 (정확도 상승)
-    try:
-        notice_url = 'http://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk'
-        n_res = requests.get(notice_url,
-                             params={'serviceKey': SAFE_API_KEY, 'numOfRows': '1', 'pageNo': '1', 'bidNtceNo': bid_no,
-                                     'type': 'json'}, verify=False, timeout=8, headers=headers)
-        if n_res.status_code == 200:
-            n_items = _safe_list(n_res.json().get('response', {}).get('body', {}).get('items', []))
-            if n_items:
-                ep_raw = str(n_items[0].get('presmptPrce', '')).strip()
-                if ep_raw and ep_raw != '0': res_data["est_price"] = safe_fmt_amt(ep_raw)
-    except:
-        pass
-
+    # [복구] 추정가격 누락을 방지하기 위해 API 호출
     try:
         detail_url = 'http://apis.data.go.kr/1230000/as/ScsbidInfoService/getOpengResultListInfoCnstwkDtl'
         d_res = requests.get(detail_url,
@@ -255,6 +255,11 @@ def fetch_bid_full_detail(bid_no, base_ord, row):
                 d = items[0]
                 bss_raw = str(d.get('bssAmt', '')).strip()
                 if bss_raw and bss_raw != '0': res_data["bss_amt"] = safe_fmt_amt(bss_raw)
+
+                # 추정가격 복구
+                est_raw = str(d.get('presmptPrce', '')).strip()
+                if est_raw and est_raw != '0': res_data["est_price"] = safe_fmt_amt(est_raw)
+
                 pre_raw = str(d.get('exptPrce', '')).strip()
                 if pre_raw and pre_raw != '0': res_data["pre_amt"] = safe_fmt_amt(pre_raw)
                 suc_raw = str(d.get('sucsfbidAmt', '')).strip()
@@ -273,7 +278,7 @@ def fetch_bid_full_detail(bid_no, base_ord, row):
 
 
 # ==========================================
-# 7. UI 및 메인 로직
+# 8. UI 및 메인 로직
 # ==========================================
 update_stats()
 t_visit, t_user = get_stats()
@@ -294,7 +299,7 @@ with c4: st.markdown(
 with st.sidebar:
     st.write(f"### 👷 {'👋 ' + st.session_state['user_name'] + ' 소장님' if st.session_state['logged_in'] else 'K-건설맵 메뉴'}")
 
-    # [해결 1] 로그인 성공 시 메뉴에서 '로그인' 탭 자동 삭제
+    # 로그인 여부에 따라 메뉴 깔끔하게 정리
     if st.session_state['logged_in']:
         menu_list = ["🏆 1순위 현황판", "📊 실시간 공고 (홈)", "📁 K-건설 자료실", "💬 K건설챗"]
     else:
@@ -305,7 +310,7 @@ with st.sidebar:
     if st.button("🔄 만능 데이터 새로고침"): st.cache_data.clear(); st.rerun()
     if st.session_state['logged_in'] and st.button("🚪 로그아웃"): st.session_state['logged_in'] = False; st.rerun()
 
-# --- 메뉴 로직 ---
+# --- 메뉴별 화면 구성 ---
 if menu == "🏆 1순위 현황판":
     st.subheader("🏆 실시간 1순위 현황판")
     selected_region_1st = st.selectbox("🌍 지역 필터링", REGION_LIST)
@@ -318,7 +323,7 @@ if menu == "🏆 1순위 현황판":
             row = df_f.iloc[event.selection.rows[0]]
             det = fetch_bid_full_detail(str(row['공고번호']).strip(), row.get('공고차수', '00'), row)
 
-            # [해결 2] 명환이가 좋아하던 폰트 크기 및 HTML 디자인 원상 복구!
+            # [복구 완료] 명환이가 좋아하던 작은 HTML 폰트 디자인 원상복구!
             st.markdown(f"#### ✅ [나노 VIP 분석 리포트] {row['공고명'][:35]}...")
             m1, m2, m3, m4 = st.columns(4)
             with m1:
@@ -342,12 +347,12 @@ if menu == "🏆 1순위 현황판":
             if det['corps']:
                 st.dataframe(pd.DataFrame(det['corps']), use_container_width=True, hide_index=True)
             else:
-                st.warning("💡 조달청에서 아직 개찰 상세 성적표를 업로드하지 않았습니다.")
+                st.warning("💡 조달청에서 아직 개찰 상세 성적표를 업로드하지 않았습니다. (보통 개찰 직후 딜레이가 발생합니다)")
 
             st.markdown("💡 **조달청 보안 정책으로 공고번호 복사가 필요합니다.**")
             st.code(row['공고번호'], language=None)
     else:
-        st.warning("데이터를 불러오는 중입니다...")
+        st.warning("데이터를 불러오는 중입니다.")
 
 elif menu == "📊 실시간 공고 (홈)":
     st.subheader("📊 실시간 입찰 공고")
@@ -356,7 +361,7 @@ elif menu == "📊 실시간 공고 (홈)":
         selected_region_live = st.selectbox("🌍 지역 필터링", REGION_LIST)
         df_f = filter_by_region(df_live, selected_region_live)
 
-        # [해결 3] 공고보기 링크(버튼) 설정 완벽 부활!
+        # [복구 완료] 표에서 '상세보기'를 파란색 링크로 예쁘게 띄워주는 설정 부활!
         col_cfg = {
             "상세보기": st.column_config.LinkColumn("상세보기", display_text="공고보기"),
             "예산금액": st.column_config.NumberColumn("예산(원)", format="%,d")
@@ -416,31 +421,31 @@ elif menu == "💬 K건설챗":
 elif menu == "👤 로그인 / 회원가입":
     st.subheader("👤 회원 정보 관리")
     t1, t2 = st.tabs(["🔑 로그인", "📝 회원가입"])
-    with t1:
-        le, lp = st.text_input("이메일", key="l_e"), st.text_input("비밀번호", type="password", key="l_p")
-        if st.button("로그인"):
-            login_success = False
-            try:
-                user = auth.sign_in_with_email_and_password(le.strip().lower(), lp)
-                info = db.child("users").child(user['localId']).get().val() or {}
-                st.session_state.update(
-                    {'logged_in': True, 'user_name': info.get('name', '소장님'), 'user_license': info.get('license', '')})
-                login_success = True
-            except:
-                st.toast("이메일 또는 비밀번호를 확인해주세요.", icon="🚨")
 
-            if login_success: st.rerun()  # 로그인 성공하면 즉시 화면 이동!
+    with t1:
+        le = st.text_input("이메일", key="l_e")
+        lp = st.text_input("비밀번호", type="password", key="l_p")
+        if st.button("로그인"):
+            try:
+                user = auth.sign_in_with_email_and_password(le.strip(), lp)
+                info = db.child("users").child(user['localId']).get().val() or {}
+                st.session_state['logged_in'] = True
+                st.session_state['user_name'] = info.get('name', '소장님')
+                st.session_state['user_license'] = info.get('license', '')
+                st.rerun()  # [해결 1] 로그인 성공하면 오류창 띄울 틈 없이 바로 새로고침해서 현황판으로 보냄!
+            except:
+                st.error("로그인 실패! 이메일이나 비밀번호를 다시 확인해주세요.")
 
     with t2:
-        re, rp, rn, rl = st.text_input("가입용 이메일", key="r_e"), st.text_input("비번 (6자 이상)", type="password",
-                                                                            key="r_p"), st.text_input("성함",
-                                                                                                      key="r_n"), st.multiselect(
-            "보유 면허", ALL_LICENSES, key="r_l")
+        re = st.text_input("가입용 이메일", key="r_e")
+        rp = st.text_input("비번 (6자 이상)", type="password", key="r_p")
+        rn = st.text_input("성함", key="r_n")
+        rl = st.multiselect("보유 면허", ALL_LICENSES, key="r_l")
+
         if st.button("가입하기"):
             try:
-                u = auth.create_user_with_email_and_password(re.strip().lower(), rp)
-                db.child("users").child(u['localId']).set(
-                    {"name": rn, "license": ", ".join(rl), "email": re.strip().lower()})
-                st.toast("🎉 가입 성공! 로그인 탭에서 접속해주세요.", icon="✅")
+                u = auth.create_user_with_email_and_password(re.strip(), rp)
+                db.child("users").child(u['localId']).set({"name": rn, "license": ", ".join(rl), "email": re.strip()})
+                st.success("🎉 가입 성공! 로그인 탭에서 접속해주세요.")
             except:
-                st.toast("가입 실패! 형식을 확인하거나 이미 있는 이메일인지 확인하세요.", icon="❌")
+                st.error("가입 실패! 형식을 확인하거나 이미 있는 이메일인지 확인하세요.")
