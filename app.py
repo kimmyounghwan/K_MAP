@@ -147,7 +147,6 @@ def get_hybrid_1st_bids():
     except:
         api_items = []
 
-    # [핵심 수술] 300개 -> 4000개로 대폭 확장! (약 15~20일치 분량)
     db_data = db.child("archive_1st").order_by_key().limit_to_last(4000).get().val() or {}
     db_items = list(db_data.values()) if isinstance(db_data, dict) else []
     new_rows = {}
@@ -195,7 +194,6 @@ def get_hybrid_live_bids():
         api_items = api_items.get('item', [api_items])
         if isinstance(api_items, dict): api_items = [api_items]
 
-    # [핵심 수술] 300개 -> 4000개로 대폭 확장! (약 15~20일치 분량)
     db_data = db.child("archive_live").order_by_key().limit_to_last(4000).get().val() or {}
     db_items = list(db_data.values()) if isinstance(db_data, dict) else []
     new_rows = {}
@@ -356,9 +354,10 @@ elif menu == "💬 K건설챗":
     else:
         chat_box = st.container(height=450)
         try:
-            chats_data = db.child("k_chat").get().val()
-            if chats_data:
-                chat_list = list(chats_data.values())[-30:]
+            # [수정 1] 인덱스 에러 방지를 위해 전체를 가져와서 최신 30개 자르기!
+            all_chats = db.child("k_chat").get().val()
+            if all_chats:
+                chat_list = list(all_chats.values())[-30:]
                 for v in chat_list: chat_box.write(f"**{v['author']}**: {v['message']}")
         except:
             chat_box.info("대화를 불러오는 중입니다.")
@@ -385,7 +384,8 @@ elif menu == "👤 로그인 / 회원가입":
                 st.toast("이메일 또는 비밀번호를 확인해주세요.", icon="🚨")
             if login_success: st.rerun()
     with t2:
-        re, rp, rn, rl = st.text_input("가입용 이메일"), text_input("비번 (6자 이상)", type="password"), st.text_input(
+        # [수정 2] 오타(st. 빠진 부분) 완벽하게 수정!
+        re, rp, rn, rl = st.text_input("가입용 이메일"), st.text_input("비번 (6자 이상)", type="password"), st.text_input(
             "성함"), st.multiselect("보유 면허", ALL_LICENSES)
         if st.button("가입하기"):
             try:
@@ -394,4 +394,3 @@ elif menu == "👤 로그인 / 회원가입":
                 st.success("🎉 가입 성공! 로그인 탭에서 접속해주세요.")
             except:
                 st.error("가입 실패! 형식을 확인하거나 이미 있는 이메일인지 확인하세요.")
-
