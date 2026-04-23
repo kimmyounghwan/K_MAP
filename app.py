@@ -66,7 +66,6 @@ for k, v in [('logged_in', False), ('user_name', ""), ('user_license', ""), ('us
 # 3. 방문 누적 카운팅 로직
 # ==========================================
 def update_stats():
-    # 방문자가 처음 접속했을 때만 장부에 +1 기록 (새로고침 중복 카운트 방지)
     if 'visited' not in st.session_state:
         try:
             curr = db.child("stats").child("total_visits").get().val()
@@ -89,8 +88,7 @@ def get_stats():
 # ==========================================
 # 4. 유틸리티 함수
 # ==========================================
-REGION_LIST = ["전국(전체)", "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남",
-               "제주"]
+REGION_LIST = ["전국(전체)", "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"]
 ALL_LICENSES = ["[종합] 건축공사업", "[종합] 토목공사업", "[종합] 토목건축공사업", "[종합] 조경공사업", "[전문] 지반조성·포장공사업", "[전문] 실내건축공사업",
                 "[전문] 철근·콘크리트공사업", "[기타] 전기공사업", "[기타] 정보통신공사업", "[기타] 소방시설공사업"]
 BASE = 'http://apis.data.go.kr/1230000'
@@ -154,8 +152,8 @@ def _safe_list(obj):
     return []
 
 
+# 🚨 1순위 돌파를 위한 크롬 위장 헤더 및 30초 타임아웃
 def _api_get(url: str, params: dict, timeout: int = 30) -> list:
-    # 📌 조달청 서버가 파이썬 봇 접근을 차단하지 못하도록 크롬 브라우저 헤더 추가
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -218,9 +216,12 @@ def show_analysis_dialog(row, det, mode="1st"):
 
         try:
             bid_no_live = str(row['공고번호']).split('-')[0].strip()
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
             r = requests.get(f'{BASE}/ad/BidPublicInfoService/getBidPblancListInfoCnstwk',
                              params={'serviceKey': SAFE_API_KEY, 'numOfRows': '1', 'pageNo': '1', 'inqryDiv': '2',
-                                     'bidNtceNo': bid_no_live, 'type': 'json'}, verify=False, timeout=10)
+                                     'bidNtceNo': bid_no_live, 'type': 'json'}, headers=headers, verify=False, timeout=10)
             if r.status_code == 200:
                 items = _safe_list(r.json().get('response', {}).get('body', {}).get('items', []))
                 if items:
@@ -243,8 +244,7 @@ def show_analysis_dialog(row, det, mode="1st"):
         st.write("---")
         st.write("💡 **나노 AI 추천 투찰금액 (사정률 5구간)**")
         tr_cols = st.columns(5)
-        rates, labels = [99.0, 99.5, 100.0, 100.5, 101.0], ["❄️ 99.0%", "🌬️ 99.5%", "🌤️ 100.0%", "☀️ 100.5%",
-                                                            "🔥 101.0%"]
+        rates, labels = [99.0, 99.5, 100.0, 100.5, 101.0], ["❄️ 99.0%", "🌬️ 99.5%", "🌤️ 100.0%", "☀️ 100.5%", "🔥 101.0%"]
         for i, r in enumerate(rates):
             with tr_cols[i]:
                 price = int(sim_base * (r / 100.0) * (float(sim_rate) / 100.0))
@@ -260,22 +260,29 @@ def show_analysis_dialog(row, det, mode="1st"):
 
 
 # ==========================================
-# 6. 데이터 수집 엔진
+# 6. 데이터 수집 엔진 (999건 한도 돌파 로직 탑재!)
 # ==========================================
 @st.cache_data(ttl=60, show_spinner=False)
 def get_hybrid_1st_bids():
     now = datetime.now(KST)
-    # 📌 과도한 검색 범위(5일)로 인한 조달청 서버 튕김 현상 방지를 위해 2일로 축소 (과거 데이터는 DB에 이미 저장됨)
-    s_dt = (now - timedelta(days=2)).strftime('%Y%m%d')
+    s_dt = (now - timedelta(days=2)).strftime('%Y%m%d')  # 안정적인 2일치
     e_dt = now.strftime('%Y%m%d')
+    api_items = []
 
-    # 📌 타임아웃 30초로 증가
-    api_items = _api_get(f'{BASE}/as/ScsbidInfoService/getOpengResultListInfoCnstwk',
-                         {'numOfRows': '999', 'pageNo': '1', 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
-                          'inqryEndDt': e_dt + '2359'}, timeout=30)
-    api_items.extend(_api_get(f'{BASE}/as/ScsbidInfoService/getOpengResultListInfoEtcwk',
-                              {'numOfRows': '999', 'pageNo': '1', 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
-                               'inqryEndDt': e_dt + '2359'}, timeout=30))
+    # 📌 11시 멈춤 해결: 최대 3페이지(2997건)까지 강제로 넘겨가며 싹쓸이
+    for p in ['1', '2', '3']:
+        res = _api_get(f'{BASE}/as/ScsbidInfoService/getOpengResultListInfoCnstwk',
+                       {'numOfRows': '999', 'pageNo': p, 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
+                        'inqryEndDt': e_dt + '2359'}, timeout=30)
+        api_items.extend(res)
+        if len(res) < 999: break  # 999건이 안 되면 마지막 페이지니까 멈춤
+
+    for p in ['1', '2']:
+        res = _api_get(f'{BASE}/as/ScsbidInfoService/getOpengResultListInfoEtcwk',
+                       {'numOfRows': '999', 'pageNo': p, 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
+                        'inqryEndDt': e_dt + '2359'}, timeout=30)
+        api_items.extend(res)
+        if len(res) < 999: break
 
     db_data = db.child("archive_1st").order_by_key().limit_to_last(4000).get().val() or {}
     db_items = list(db_data.values()) if isinstance(db_data, dict) else []
@@ -303,13 +310,23 @@ def get_hybrid_1st_bids():
 def get_hybrid_live_bids():
     now = datetime.now(KST)
     s_dt = now.strftime('%Y%m%d')
-    # 📌 타임아웃 30초로 증가
-    api_items = _api_get(f'{BASE}/ad/BidPublicInfoService/getBidPblancListInfoCnstwk',
-                         {'numOfRows': '999', 'pageNo': '1', 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
-                          'inqryEndDt': s_dt + '2359', 'bidNtceNm': '공사'}, timeout=30)
-    api_items.extend(_api_get(f'{BASE}/ad/BidPublicInfoService/getBidPblancListInfoEtcwk',
-                              {'numOfRows': '999', 'pageNo': '1', 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
-                               'inqryEndDt': s_dt + '2359', 'bidNtceNm': '공사'}, timeout=30))
+    api_items = []
+
+    # 📌 실시간 공고도 2페이지(1998건)까지 강제로 넘겨서 싹쓸이
+    for p in ['1', '2']:
+        res = _api_get(f'{BASE}/ad/BidPublicInfoService/getBidPblancListInfoCnstwk',
+                       {'numOfRows': '999', 'pageNo': p, 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
+                        'inqryEndDt': s_dt + '2359', 'bidNtceNm': '공사'}, timeout=30)
+        api_items.extend(res)
+        if len(res) < 999: break
+
+    for p in ['1', '2']:
+        res = _api_get(f'{BASE}/ad/BidPublicInfoService/getBidPblancListInfoEtcwk',
+                       {'numOfRows': '999', 'pageNo': p, 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
+                        'inqryEndDt': s_dt + '2359', 'bidNtceNm': '공사'}, timeout=30)
+        api_items.extend(res)
+        if len(res) < 999: break
+
     db_data = db.child("archive_live").order_by_key().limit_to_last(4000).get().val() or {}
     db_items = list(db_data.values()) if isinstance(db_data, dict) else []
     new_rows = {
@@ -373,7 +390,6 @@ def fetch_detail(row):
 # ==========================================
 # 7. UI 대시보드
 # ==========================================
-# 📌 방문자 누적 업데이트 함수 호출
 update_stats()
 t_visit, u_total = get_stats()
 
