@@ -16,10 +16,14 @@ st.set_page_config(page_title="K-건설맵 Master", layout="wide", initial_sideb
 
 st.markdown("""
     <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
         <meta name="naver-site-verification" content="bfb3f10bce2983b4dd5974ba39d05e3ce5225e73" />
         <meta name="description" content="K-건설맵: 전국 건설 공사 입찰 및 실시간 1순위 개찰 결과를 즉시 확인하세요.">
     </head>
     <style>
+        /* 모바일 화면 흔들림 및 줌 방지 */
+        html, body { overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y; }
+
         .stApp[data-teststate="running"] .stAppViewBlockContainer { filter: none !important; opacity: 1 !important; }
         [data-testid="stStatusWidget"] { visibility: hidden !important; display: none !important; }
         .stApp { transition: none !important; }
@@ -28,6 +32,7 @@ st.markdown("""
         .stat-label { font-size: 13px; color: #64748b; font-weight: 600; margin-bottom: 4px; }
         .stat-val { font-size: 17px; font-weight: 800; color: #1e3a8a; }
         .calc-badge { font-size: 10px; color: #ea580c; font-weight: 700; margin-top: 3px; }
+        .guide-box { background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 12px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; color: #1e3a8a; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -88,7 +93,8 @@ def get_stats():
 # ==========================================
 # 4. 유틸리티 함수
 # ==========================================
-REGION_LIST = ["전국(전체)", "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"]
+REGION_LIST = ["전국(전체)", "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남",
+               "제주"]
 ALL_LICENSES = ["[종합] 건축공사업", "[종합] 토목공사업", "[종합] 토목건축공사업", "[종합] 조경공사업", "[전문] 지반조성·포장공사업", "[전문] 실내건축공사업",
                 "[전문] 철근·콘크리트공사업", "[기타] 전기공사업", "[기타] 정보통신공사업", "[기타] 소방시설공사업"]
 BASE = 'http://apis.data.go.kr/1230000'
@@ -152,7 +158,6 @@ def _safe_list(obj):
     return []
 
 
-# 🚨 1순위 돌파를 위한 크롬 위장 헤더 및 30초 타임아웃
 def _api_get(url: str, params: dict, timeout: int = 30) -> list:
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -210,18 +215,14 @@ def show_analysis_dialog(row, det, mode="1st"):
         st.markdown(f"### 🎯 입찰 시뮬레이터")
         st.write(f"**공고명:** {row['공고명']}")
         budget = int(row['예산금액'])
-
         sim_base_val = budget
         base_label = "예산금액"
 
         try:
             bid_no_live = str(row['공고번호']).split('-')[0].strip()
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
             r = requests.get(f'{BASE}/ad/BidPublicInfoService/getBidPblancListInfoCnstwk',
                              params={'serviceKey': SAFE_API_KEY, 'numOfRows': '1', 'pageNo': '1', 'inqryDiv': '2',
-                                     'bidNtceNo': bid_no_live, 'type': 'json'}, headers=headers, verify=False, timeout=10)
+                                     'bidNtceNo': bid_no_live, 'type': 'json'}, verify=False, timeout=10)
             if r.status_code == 200:
                 items = _safe_list(r.json().get('response', {}).get('body', {}).get('items', []))
                 if items:
@@ -244,7 +245,8 @@ def show_analysis_dialog(row, det, mode="1st"):
         st.write("---")
         st.write("💡 **나노 AI 추천 투찰금액 (사정률 5구간)**")
         tr_cols = st.columns(5)
-        rates, labels = [99.0, 99.5, 100.0, 100.5, 101.0], ["❄️ 99.0%", "🌬️ 99.5%", "🌤️ 100.0%", "☀️ 100.5%", "🔥 101.0%"]
+        rates, labels = [99.0, 99.5, 100.0, 100.5, 101.0], ["❄️ 99.0%", "🌬️ 99.5%", "🌤️ 100.0%", "☀️ 100.5%",
+                                                            "🔥 101.0%"]
         for i, r in enumerate(rates):
             with tr_cols[i]:
                 price = int(sim_base * (r / 100.0) * (float(sim_rate) / 100.0))
@@ -260,44 +262,48 @@ def show_analysis_dialog(row, det, mode="1st"):
 
 
 # ==========================================
-# 6. 데이터 수집 엔진 (999건 한도 돌파 로직 탑재!)
+# 6. 데이터 수집 엔진 (1순위 에러 방어 로직 강화)
 # ==========================================
 @st.cache_data(ttl=60, show_spinner=False)
 def get_hybrid_1st_bids():
     now = datetime.now(KST)
-    s_dt = (now - timedelta(days=2)).strftime('%Y%m%d')  # 안정적인 2일치
+    s_dt = (now - timedelta(days=2)).strftime('%Y%m%d')
     e_dt = now.strftime('%Y%m%d')
-    api_items = []
 
-    # 📌 11시 멈춤 해결: 최대 3페이지(2997건)까지 강제로 넘겨가며 싹쓸이
-    for p in ['1', '2', '3']:
-        res = _api_get(f'{BASE}/as/ScsbidInfoService/getOpengResultListInfoCnstwk',
-                       {'numOfRows': '999', 'pageNo': p, 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
-                        'inqryEndDt': e_dt + '2359'}, timeout=30)
-        api_items.extend(res)
-        if len(res) < 999: break  # 999건이 안 되면 마지막 페이지니까 멈춤
-
-    for p in ['1', '2']:
-        res = _api_get(f'{BASE}/as/ScsbidInfoService/getOpengResultListInfoEtcwk',
-                       {'numOfRows': '999', 'pageNo': p, 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
-                        'inqryEndDt': e_dt + '2359'}, timeout=30)
-        api_items.extend(res)
-        if len(res) < 999: break
+    api_items = _api_get(f'{BASE}/as/ScsbidInfoService/getOpengResultListInfoCnstwk',
+                         {'numOfRows': '999', 'pageNo': '1', 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
+                          'inqryEndDt': e_dt + '2359'}, timeout=30)
+    api_items.extend(_api_get(f'{BASE}/as/ScsbidInfoService/getOpengResultListInfoEtcwk',
+                              {'numOfRows': '999', 'pageNo': '1', 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
+                               'inqryEndDt': e_dt + '2359'}, timeout=30))
 
     db_data = db.child("archive_1st").order_by_key().limit_to_last(4000).get().val() or {}
     db_items = list(db_data.values()) if isinstance(db_data, dict) else []
     new_rows = {}
+
     for it in api_items:
         bid_no = it.get('bidNtceNo', '')
-        info = str(it.get('opengCorpInfo', '')).split('|')[0].split('^')
-        if len(info) > 1 and info[0].strip():
-            new_rows[bid_no] = {'1순위업체': info[0].strip(), '공고번호': bid_no, '공고차수': it.get('bidNtceOrd', '00'),
-                                '날짜': it.get('opengDt', ''), '공고명': it.get('bidNtceNm', ''),
-                                '발주기관': it.get('ntceInsttNm', ''),
-                                '투찰금액': f"{int(float(info[3])):,}원" if len(info) > 3 else '-',
-                                '투찰률': f"{info[4]}%" if len(info) > 4 else '-', '전체업체': it.get('opengCorpInfo', '')}
+        corp_info_raw = it.get('opengCorpInfo', '')
+
+        # 🛡️ 나노의 방어벽: 조달청이 불량(빈) 데이터를 주면 에러 없이 조용히 패스함!
+        if corp_info_raw:
+            info = str(corp_info_raw).split('|')[0].split('^')
+            if len(info) > 3 and info[0].strip():
+                new_rows[bid_no] = {
+                    '1순위업체': info[0].strip(),
+                    '공고번호': bid_no,
+                    '공고차수': it.get('bidNtceOrd', '00'),
+                    '날짜': it.get('opengDt', ''),
+                    '공고명': it.get('bidNtceNm', ''),
+                    '발주기관': it.get('ntceInsttNm', ''),
+                    '투찰금액': f"{int(float(info[3])):,}원" if len(info) > 3 else '-',
+                    '투찰률': f"{info[4]}%" if len(info) > 4 else '-',
+                    '전체업체': corp_info_raw
+                }
+
     if new_rows: db.child("archive_1st").update(new_rows)
     df = pd.DataFrame(list(new_rows.values()) + db_items)
+
     if not df.empty:
         df = df.drop_duplicates(subset=['공고번호']).copy()
         df['dt'] = pd.to_datetime(df['날짜'], errors='coerce')
@@ -310,23 +316,12 @@ def get_hybrid_1st_bids():
 def get_hybrid_live_bids():
     now = datetime.now(KST)
     s_dt = now.strftime('%Y%m%d')
-    api_items = []
-
-    # 📌 실시간 공고도 2페이지(1998건)까지 강제로 넘겨서 싹쓸이
-    for p in ['1', '2']:
-        res = _api_get(f'{BASE}/ad/BidPublicInfoService/getBidPblancListInfoCnstwk',
-                       {'numOfRows': '999', 'pageNo': p, 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
-                        'inqryEndDt': s_dt + '2359', 'bidNtceNm': '공사'}, timeout=30)
-        api_items.extend(res)
-        if len(res) < 999: break
-
-    for p in ['1', '2']:
-        res = _api_get(f'{BASE}/ad/BidPublicInfoService/getBidPblancListInfoEtcwk',
-                       {'numOfRows': '999', 'pageNo': p, 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
-                        'inqryEndDt': s_dt + '2359', 'bidNtceNm': '공사'}, timeout=30)
-        api_items.extend(res)
-        if len(res) < 999: break
-
+    api_items = _api_get(f'{BASE}/ad/BidPublicInfoService/getBidPblancListInfoCnstwk',
+                         {'numOfRows': '999', 'pageNo': '1', 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
+                          'inqryEndDt': s_dt + '2359', 'bidNtceNm': '공사'}, timeout=30)
+    api_items.extend(_api_get(f'{BASE}/ad/BidPublicInfoService/getBidPblancListInfoEtcwk',
+                              {'numOfRows': '999', 'pageNo': '1', 'inqryDiv': '1', 'inqryBgnDt': s_dt + '0000',
+                               'inqryEndDt': s_dt + '2359', 'bidNtceNm': '공사'}, timeout=30))
     db_data = db.child("archive_live").order_by_key().limit_to_last(4000).get().val() or {}
     db_items = list(db_data.values()) if isinstance(db_data, dict) else []
     new_rows = {
@@ -349,7 +344,6 @@ def fetch_detail(row):
     res = {'bss_amt': '', 'est_price': '', 'pre_amt': '', 'sources': {}}
     bid_type = get_bid_type(bid_no)
     urls = API_TABLE.get(bid_type, API_TABLE['cnstwk'])
-
     items = _api_get(urls['notice'], {'numOfRows': '5', 'pageNo': '1', 'inqryDiv': '2', 'bidNtceNo': bid_no})
     if items:
         d = items[0]
@@ -370,7 +364,6 @@ def fetch_detail(row):
                 res['est_price']) > 0 else res['pre_amt']
             res['sources']['bss'] = 'CALC'
 
-    # [추정가격 역산 기입 로직]
     if not res['est_price'] and res['bss_amt']:
         res['est_price'] = fmt_amt(int(round(raw_to_int(res['bss_amt']) / 1.1)))
         res['sources']['est'] = 'CALC'
@@ -396,22 +389,18 @@ t_visit, u_total = get_stats()
 st.markdown('<div class="main-title">🏛️ K-건설맵 Master</div>', unsafe_allow_html=True)
 
 c1, c2, c3, c4 = st.columns(4)
-with c1:
-    st.markdown(
-        f'<div class="stat-card"><div class="stat-label">📅 오늘 날짜</div><div class="stat-val">{datetime.now(KST).strftime("%Y-%m-%d")}</div></div>',
-        unsafe_allow_html=True)
-with c2:
-    st.markdown(
-        f'<div class="stat-card"><div class="stat-label">📈 누적 방문</div><div class="stat-val">{t_visit:,}명</div></div>',
-        unsafe_allow_html=True)
-with c3:
-    st.markdown(
-        f'<div class="stat-card"><div class="stat-label">👥 전체 회원수</div><div class="stat-val">{u_total:,}명</div></div>',
-        unsafe_allow_html=True)
-with c4:
-    st.markdown(
-        f'<div class="stat-card"><div class="stat-label">🔔 가동 상태</div><div class="stat-val" style="color:green;">정상 가동 중</div></div>',
-        unsafe_allow_html=True)
+with c1: st.markdown(
+    f'<div class="stat-card"><div class="stat-label">📅 오늘 날짜</div><div class="stat-val">{datetime.now(KST).strftime("%Y-%m-%d")}</div></div>',
+    unsafe_allow_html=True)
+with c2: st.markdown(
+    f'<div class="stat-card"><div class="stat-label">📈 누적 방문</div><div class="stat-val">{t_visit:,}명</div></div>',
+    unsafe_allow_html=True)
+with c3: st.markdown(
+    f'<div class="stat-card"><div class="stat-label">👥 전체 회원수</div><div class="stat-val">{u_total:,}명</div></div>',
+    unsafe_allow_html=True)
+with c4: st.markdown(
+    f'<div class="stat-card"><div class="stat-label">🔔 가동 상태</div><div class="stat-val" style="color:green;">정상 가동 중</div></div>',
+    unsafe_allow_html=True)
 
 with st.sidebar:
     st.write(f"### 👷 {'👋 ' + st.session_state['user_name'] + ' 소장님' if st.session_state['logged_in'] else 'K-건설맵 메뉴'}")
@@ -432,9 +421,13 @@ ROWS_PER_PAGE = 20
 
 if menu == "🏆 1순위 현황판":
     st.markdown("#### 🏆 실시간 1순위 현황판")
-    st.markdown(
-        "<div style='color:#475569; font-size:13px; margin-bottom:12px;'>💡 <b>이용 안내:</b> 리스트 왼쪽의 사각형을 클릭하면 상세 리포트가 <b>팝업창</b>으로 열립니다.</div>",
-        unsafe_allow_html=True)
+
+    st.markdown("""
+        <div class="guide-box">
+            💡 <b>터치 한 번으로 정밀 분석!</b><br>
+            아래 리스트 맨 왼쪽의 <b>[체크박스(ㅁ)]</b>를 터치해 보세요. 상세 리포트가 팝업창으로 즉시 열립니다.
+        </div>
+    """, unsafe_allow_html=True)
 
     df_w = get_hybrid_1st_bids()
     if not df_w.empty:
@@ -445,8 +438,7 @@ if menu == "🏆 1순위 현황판":
             search_co = st.text_input("🏢 업체명 검색", placeholder="낙찰 업체명을 입력하세요", key="search_main")
 
         df_f = filter_by_region(df_w, sel_reg)
-        if search_co:
-            df_f = df_f[df_f['1순위업체'].str.contains(search_co, na=False)]
+        if search_co: df_f = df_f[df_f['1순위업체'].str.contains(search_co, na=False)]
 
         num_pages = max(1, (len(df_f) // ROWS_PER_PAGE) + (1 if len(df_f) % ROWS_PER_PAGE > 0 else 0))
         if "p1" not in st.session_state: st.session_state["p1"] = 1
@@ -463,12 +455,19 @@ if menu == "🏆 1순위 현황판":
 
         if len(event.selection.rows) > 0:
             selected_row = df_page.iloc[event.selection.rows[0]]
-            with st.spinner("📡 분석 중..."):
-                det = fetch_detail(selected_row)
+            with st.spinner("📡 분석 중..."): det = fetch_detail(selected_row)
             show_analysis_dialog(selected_row, det, mode="1st")
 
 elif menu == "📊 실시간 공고 (홈)":
     st.markdown("#### 📊 실시간 입찰 공고")
+
+    st.markdown("""
+        <div class="guide-box">
+            💡 <b>입찰 시뮬레이터 가동!</b><br>
+            아래 리스트 맨 왼쪽의 <b>[체크박스(ㅁ)]</b>를 터치해 보세요. AI 추천 투찰금액이 팝업창으로 열립니다.
+        </div>
+    """, unsafe_allow_html=True)
+
     df_live = get_hybrid_live_bids()
     if not df_live.empty:
         df_f = filter_by_region(df_live, st.selectbox("🌍 지역 필터링", REGION_LIST, key="reg2"))
@@ -485,10 +484,8 @@ elif menu == "📊 실시간 공고 (홈)":
                 event = st.dataframe(df_p_all[['공고번호', '공고일자', '공고명', '발주기관', '예산금액', '상세보기']],
                                      use_container_width=True, hide_index=True, height=700, column_config=col_cfg,
                                      selection_mode="single-row", on_select="rerun", key="live_all")
-
                 c1, c2, c3 = st.columns([3, 4, 3])
-                with c2:
-                    st.selectbox(f"📄 페이지 이동 (총 {n_all}쪽)", range(1, n_all + 1), key="p_all")
+                with c2: st.selectbox(f"📄 페이지 이동 (총 {n_all}쪽)", range(1, n_all + 1), key="p_all")
             with t2:
                 kw = get_match_keywords(st.session_state.get('user_license', ''))
                 m_full = df_f[df_f['공고명'].str.contains('|'.join(kw), na=False)] if kw else df_f
@@ -499,13 +496,10 @@ elif menu == "📊 실시간 공고 (홈)":
                 event_m = st.dataframe(df_p_m[['공고번호', '공고일자', '공고명', '발주기관', '예산금액', '상세보기']],
                                        use_container_width=True, hide_index=True, height=700, column_config=col_cfg,
                                        selection_mode="single-row", on_select="rerun", key="live_match")
-
                 c1, c2, c3 = st.columns([3, 4, 3])
                 with c2:
                     st.selectbox(f"📄 페이지 이동 (총 {n_m}쪽)", range(1, n_m + 1), key="p_m")
-
-                if len(event_m.selection.rows) > 0:
-                    event, df_p_all = event_m, df_p_m
+                if len(event_m.selection.rows) > 0: event, df_p_all = event_m, df_p_m
         else:
             n_g = max(1, (len(df_f) // ROWS_PER_PAGE) + 1)
             if "p_g" not in st.session_state: st.session_state["p_g"] = 1
@@ -513,7 +507,6 @@ elif menu == "📊 실시간 공고 (홈)":
             event = st.dataframe(df_p_g[['공고번호', '공고일자', '공고명', '발주기관', '예산금액', '상세보기']], use_container_width=True,
                                  hide_index=True, height=700, column_config=col_cfg, selection_mode="single-row",
                                  on_select="rerun")
-
             c1, c2, c3 = st.columns([3, 4, 3])
             with c2:
                 st.selectbox(f"📄 페이지 이동 (총 {n_g}쪽)", range(1, n_g + 1), key="p_g")
@@ -548,14 +541,12 @@ elif menu == "🤝 K-구인구직":
             h = df_j[df_j['category'] == "👷 사람 구합니다"]
             ev_h = st.dataframe(h[['time', 'region', 'job_type', 'title', 'author']], use_container_width=True,
                                 hide_index=True, selection_mode="single-row", on_select="rerun", key="h_job")
-            if len(ev_h.selection.rows) > 0:
-                show_analysis_dialog(h.iloc[ev_h.selection.rows[0]], None, mode="job")
+            if len(ev_h.selection.rows) > 0: show_analysis_dialog(h.iloc[ev_h.selection.rows[0]], None, mode="job")
         with t2:
             s = df_j[df_j['category'] == "🚜 일자리 찾습니다"]
             ev_s = st.dataframe(s[['time', 'region', 'job_type', 'title', 'author']], use_container_width=True,
                                 hide_index=True, selection_mode="single-row", on_select="rerun", key="s_job")
-            if len(ev_s.selection.rows) > 0:
-                show_analysis_dialog(s.iloc[ev_s.selection.rows[0]], None, mode="job")
+            if len(ev_s.selection.rows) > 0: show_analysis_dialog(s.iloc[ev_s.selection.rows[0]], None, mode="job")
 
 elif menu == "📲 앱처럼 설치하기":
     st.markdown("### 📲 스마트폰 바탕화면에 앱으로 추가하기")
@@ -613,8 +604,7 @@ elif menu == "📁 K-건설 자료실":
     posts = db.child("posts").get().val()
     if posts:
         for k, v in reversed(list(posts.items())):
-            with st.expander(f"📢 {v['title']} (작성자: {v['author']})"):
-                st.write(v['content'])
+            with st.expander(f"📢 {v['title']} (작성자: {v['author']})"): st.write(v['content'])
 
 elif menu == "💬 K건설챗":
     st.subheader("💬 실시간 현장 소통")
@@ -622,8 +612,7 @@ elif menu == "💬 K건설챗":
         chat_box = st.container(height=400)
         chats_data = db.child("k_chat").get().val()
         if chats_data:
-            for v in list(chats_data.values())[-20:]:
-                chat_box.write(f"**{v['author']}**: {v['message']}")
+            for v in list(chats_data.values())[-20:]: chat_box.write(f"**{v['author']}**: {v['message']}")
         if msg := st.chat_input("메시지 입력"):
             db.child("k_chat").push(
                 {"author": st.session_state['user_name'], "message": msg, "time": datetime.now(KST).strftime("%H:%M")})
