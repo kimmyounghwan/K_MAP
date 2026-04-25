@@ -67,18 +67,28 @@ for k, v in [('logged_in', False), ('user_name', ""), ('user_license', ""), ('us
              ('idToken', "")]:
     if k not in st.session_state: st.session_state[k] = v
 
-# [핵심] 노트북 G드라이브 마스터 데이터 로드 (분석용)
-MASTER_DATA_PATH = r"G:\내 드라이브\K-건설맵_데이터\bid_data_3years.csv"
 
-
+# [핵심] 리눅스 서버(스트림릿) 환경을 완벽하게 뚫어버리는 무적 로딩 장갑차!
 @st.cache_data(show_spinner=False)
 def load_master_data():
+    file_path = "bid_data_3years.csv"
+
+    # 1. 서버에 파일이 잘 올라왔는지 검사
+    if not os.path.exists(file_path):
+        st.sidebar.error("🚨 서버 오류: 3년 치 CSV 파일을 찾을 수 없습니다!")
+        return None
+
     try:
-        if os.path.exists(MASTER_DATA_PATH):
-            return pd.read_csv(MASTER_DATA_PATH, encoding='utf-8-sig')
-        return None
-    except Exception as e:
-        return None
+        # 2. 먼저 표준 인코딩(utf-8-sig)으로 읽어보기 시도
+        return pd.read_csv(file_path, encoding='utf-8-sig', low_memory=False)
+    except Exception as e1:
+        try:
+            # 3. 실패하면 윈도우 기본 인코딩(cp949)으로 강제 읽기 시도
+            return pd.read_csv(file_path, encoding='cp949', low_memory=False)
+        except Exception as e2:
+            # 4. 그래도 실패하면 정확한 에러 원인을 화면에 출력
+            st.sidebar.error(f"🚨 CSV 읽기 실패!\n원인1: {e1}\n원인2: {e2}")
+            return None
 
 
 big_data = load_master_data()
