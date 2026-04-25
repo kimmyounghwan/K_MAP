@@ -566,3 +566,7 @@ elif menu == "💬 K건설챗":
             st.rerun()
     else:
         st.info("로그인 후 이용 가능합니다.")
+
+
+
+
