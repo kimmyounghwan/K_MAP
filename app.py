@@ -45,6 +45,10 @@ st.markdown("""
         .diag-box { background: #1e3a8a; color: white; border-radius: 10px; padding: 16px; margin: 8px 0; text-align: center; }
         .diag-title { font-size: 13px; color: #93c5fd; font-weight: 700; margin-bottom: 4px; }
         .diag-val { font-size: 20px; font-weight: 900; }
+        .calc-result { background: linear-gradient(135deg, #1e3a8a, #1e40af); color: white; border-radius: 12px; padding: 20px; margin: 10px 0; text-align: center; }
+        .calc-price { font-size: 26px; font-weight: 900; color: #fde68a; }
+        .calc-label { font-size: 13px; color: #93c5fd; margin-bottom: 6px; }
+        .zoom-card { background: linear-gradient(135deg, #fef3c7, #fde68a); border: 2px solid #f59e0b; border-radius: 8px; padding: 10px; margin: 4px 0; text-align: center; font-weight: 800; font-size: 14px; color: #92400e; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -341,6 +345,222 @@ def engine_self_diagnosis(corp_name, bd):
         'avg_rate': avg_rate, 'rate_dist': rate_dist,
         'top_inst': top_inst, 'rate_col': rate_col
     }
+
+
+# ==========================================
+# ★ 추가 1: 투찰가 계산기 엔진
+#   - 1단계: 0.1% 단위 큰 그림 (핫존 표시)
+#   - 2단계: 핫존 클릭 시 0.01% 단위 돋보기 모드
+# ==========================================
+def engine_bid_calculator(inst_name, base_price, bd):
+    """0.1% 단위 투찰률 분포 + 추천가 계산"""
+    if bd is None or bd.empty or not inst_name or not base_price:
+        return None
+    df = bd[bd['발주기관'] == inst_name].copy()
+    if df.empty:
+        return None
+    rate_col = get_rate_col(df)
+    df['rate_f'] = df[rate_col].apply(to_float_rate)
+    df = df.dropna(subset=['rate_f'])
+    if df.empty:
+        return None
+    # 0.1% 단위 구간 (1단계: 큰 그림)
+    df['구간_01'] = (df['rate_f'] // 0.1 * 0.1).round(1)
+    zone_01 = df['구간_01'].value_counts().sort_values(ascending=False)
+    top5     = zone_01.head(5)
+    best_rate = float(top5.index[0])
+    recommended = int(base_price * best_rate / 100)
+    avg_rate = round(df['rate_f'].mean(), 2)
+    mid_rate = round(df['rate_f'].median(), 2)
+    avg_price = int(base_price * avg_rate / 100)
+    mid_price = int(base_price * mid_rate / 100)
+    return {
+        'df'         : df,
+        'total'      : len(df),
+        'rate_col'   : rate_col,
+        'zone_01'    : zone_01,
+        'top5'       : top5,
+        'best_rate'  : best_rate,
+        'recommended': recommended,
+        'avg_rate'   : avg_rate,
+        'mid_rate'   : mid_rate,
+        'avg_price'  : avg_price,
+        'mid_price'  : mid_price,
+    }
+
+
+def engine_zoom(df, hot_rate, base_price):
+    """2단계: 0.01% 돋보기 — hot_rate 구간 내 세분화"""
+    lower = round(hot_rate, 1)
+    upper = round(lower + 0.1, 1)
+    mask  = (df['rate_f'] >= lower) & (df['rate_f'] < upper)
+    sub   = df[mask].copy()
+    if sub.empty:
+        return None
+    sub['구간_001'] = (sub['rate_f'] // 0.01 * 0.01).round(2)
+    zone_001 = sub['구간_001'].value_counts().sort_values(ascending=False)
+    best_001 = float(zone_001.index[0])
+    return {
+        'zone_001'  : zone_001,
+        'best_001'  : best_001,
+        'best_price': int(base_price * best_001 / 100),
+        'total_sub' : len(sub),
+        'lower'     : lower,
+        'upper'     : upper,
+    }
+
+
+def render_bid_calculator():
+    """★ 투찰가 계산기 화면 ★"""
+    st.markdown("#### 🧮 실제 데이터 기반 투찰가 계산기")
+    st.markdown(
+        '<div class="guide-box">'
+        '📌 <b>1단계</b>: 0.1% 단위로 발주기관의 낙찰 핫존을 찾습니다.<br>'
+        '📌 <b>2단계</b>: 핫존을 선택하면 0.01% 단위 돋보기 분석 + 차트 + 추천 투찰가가 표시됩니다.<br>'
+        '추정 없음. 3년 실제 낙찰 데이터만 사용합니다.'
+        '</div>', unsafe_allow_html=True)
+
+    if big_data is None or big_data.empty:
+        st.info("3년 마스터 데이터가 없습니다.")
+        return
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        inst_input = st.text_input("🏛️ 발주기관명 입력", placeholder="예: 여수시, 전남도청", key="calc_inst")
+    with col2:
+        base_input = st.text_input("💰 기초금액 입력 (원)", placeholder="예: 150000000", key="calc_base")
+
+    if not (inst_input and base_input):
+        return
+
+    base_clean = base_input.replace(',', '').replace('원', '').strip()
+    try:
+        base_price = int(float(base_clean))
+    except:
+        st.error("기초금액을 숫자로 입력해주세요. 예: 150000000")
+        return
+
+    matching = big_data[big_data['발주기관'].str.contains(inst_input, na=False)]['발주기관'].value_counts()
+    if matching.empty:
+        st.warning(f"'{inst_input}' 발주기관 데이터가 없습니다.")
+        return
+
+    inst_select = st.selectbox(
+        f"검색된 기관 {len(matching)}개",
+        matching.index.tolist(),
+        format_func=lambda x: f"{x} ({matching[x]}건)",
+        key="calc_inst_select"
+    )
+
+    r = engine_bid_calculator(inst_select, base_price, big_data)
+    if r is None:
+        st.warning("해당 발주기관의 데이터가 부족합니다.")
+        return
+
+    st.markdown("---")
+    st.markdown(f"**'{inst_select}' 3년 {r['total']}건 실제 데이터 분석 결과**")
+
+    # 추천가 3종
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown(
+            f'<div class="calc-result">'
+            f'<div class="calc-label">⭐ 최다발생 구간 추천가</div>'
+            f'<div class="calc-price">{r["recommended"]:,}원</div>'
+            f'<div style="font-size:12px;color:#93c5fd;margin-top:4px;">투찰률 {r["best_rate"]}%</div>'
+            f'</div>', unsafe_allow_html=True)
+    with c2:
+        st.markdown(
+            f'<div class="calc-result">'
+            f'<div class="calc-label">📊 평균 투찰률 기준</div>'
+            f'<div class="calc-price">{r["avg_price"]:,}원</div>'
+            f'<div style="font-size:12px;color:#93c5fd;margin-top:4px;">투찰률 {r["avg_rate"]}%</div>'
+            f'</div>', unsafe_allow_html=True)
+    with c3:
+        st.markdown(
+            f'<div class="calc-result">'
+            f'<div class="calc-label">📈 중간값 기준</div>'
+            f'<div class="calc-price">{r["mid_price"]:,}원</div>'
+            f'<div style="font-size:12px;color:#93c5fd;margin-top:4px;">투찰률 {r["mid_rate"]}%</div>'
+            f'</div>', unsafe_allow_html=True)
+
+    # ── 1단계: 0.1% 큰 그림 ──
+    st.markdown("---")
+    st.markdown("### 📊 1단계 — 0.1% 단위 핫존 분석")
+    max_cnt = int(r['top5'].iloc[0])
+    for rate_val, cnt in r['top5'].items():
+        bar_w   = int(cnt / max_cnt * 100)
+        is_best = (rate_val == r['best_rate'])
+        color   = "#f59e0b" if is_best else "#3b82f6"
+        star    = " ⭐ 핫존" if is_best else ""
+        price   = int(base_price * rate_val / 100)
+        st.markdown(
+            f"""<div style="margin:5px 0;display:flex;align-items:center;gap:8px;">
+                <span style="font-size:13px;font-weight:{'900' if is_best else '500'};width:90px;flex-shrink:0;">{rate_val}%{star}</span>
+                <div style="background:{color};width:{bar_w}%;height:18px;border-radius:3px;min-width:3px;"></div>
+                <span style="font-size:12px;font-weight:700;">{cnt}회 | {price:,}원</span>
+            </div>""", unsafe_allow_html=True)
+
+    # ── 2단계: 0.01% 돋보기 모드 ──
+    st.markdown("---")
+    st.markdown("### 🔬 2단계 — 0.01% 돋보기 모드")
+    st.markdown("👇 **핫존 구간을 선택하면 추천 투찰가가 바로 나옵니다.**")
+
+    zone_options = [f"{v}%" for v in r['zone_01'].head(10).index.tolist()]
+    selected_zone = st.selectbox("🎯 분석할 핫존 구간 선택 (클릭하면 추천 투찰가 즉시 확인)", zone_options, key="zoom_zone")
+
+    if selected_zone:
+        hot_rate = float(selected_zone.replace('%', ''))
+        zr = engine_zoom(r['df'], hot_rate, base_price)
+        if zr is None:
+            st.info("해당 구간의 데이터가 없습니다.")
+        else:
+            # ★ 추천 투찰가 강조 박스
+            st.markdown(
+                f'<div style="background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border-radius:12px;'
+                f'padding:18px;margin:10px 0;text-align:center;">'
+                f'<div style="font-size:13px;font-weight:700;margin-bottom:6px;">🔬 {zr["lower"]}% ~ {zr["upper"]}% 구간 돋보기 분석 ({zr["total_sub"]}건)</div>'
+                f'<div style="font-size:14px;margin-bottom:4px;">최다발생 구간: <b>{zr["best_001"]}%</b></div>'
+                f'<div style="font-size:28px;font-weight:900;color:#1e3a8a;">⭐ 추천 투찰가</div>'
+                f'<div style="font-size:32px;font-weight:900;margin-top:4px;">{zr["best_price"]:,}원</div>'
+                f'<div style="font-size:12px;margin-top:6px;opacity:0.9;">투찰률 {zr["best_001"]}% × 기초금액 {base_price:,}원</div>'
+                f'</div>', unsafe_allow_html=True)
+
+            # ★ 0.01% 단위 차트
+            st.markdown(f"**📊 0.01% 단위 상세 분포** (상위 10개) — 원단위 금액 표시")
+            max_z = int(zr['zone_001'].iloc[0]) if not zr['zone_001'].empty else 1
+            for rate_val, cnt in zr['zone_001'].head(10).items():
+                bar_w   = int(cnt / max_z * 100)
+                is_best = (rate_val == zr['best_001'])
+                color   = "#f59e0b" if is_best else "#10b981"
+                star    = " ⭐ 추천" if is_best else ""
+                price   = int(base_price * rate_val / 100)
+                pct_of_total = round(cnt / zr['total_sub'] * 100, 1)
+                st.markdown(
+                    f"""<div style="margin:5px 0;display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:13px;font-weight:{'900' if is_best else '500'};width:100px;flex-shrink:0;color:{'#d97706' if is_best else 'inherit'};">{rate_val}%{star}</span>
+                        <div style="background:{color};width:{bar_w}%;height:18px;border-radius:3px;min-width:3px;"></div>
+                        <span style="font-size:12px;font-weight:700;">{cnt}회({pct_of_total}%) | <b>{price:,}원</b></span>
+                    </div>""", unsafe_allow_html=True)
+
+            # ★ 전체 추천가 정리 테이블
+            st.markdown("---")
+            st.markdown("**📋 투찰가 추천 정리**")
+            tbl_data = []
+            zone_001_idx = list(zr['zone_001'].head(5).index)
+            for rate_val, cnt in zr['zone_001'].head(5).items():
+                price = int(base_price * rate_val / 100)
+                is_best = (rate_val == zr['best_001'])
+                rank_str = "⭐ 1위 추천" if is_best else f"{zone_001_idx.index(rate_val)+1}위"
+                tbl_data.append({
+                    '순위': rank_str,
+                    '투찰률': f"{rate_val}%",
+                    '투찰금액 (원단위)': f"{price:,}원",
+                    '낙찰 빈도': f"{cnt}회"
+                })
+            st.dataframe(pd.DataFrame(tbl_data), use_container_width=True, hide_index=True)
+
+    st.caption("* 3년 실제 낙찰 데이터 기준. 투찰 결정은 본인 판단으로 하세요.")
 
 
 # ==========================================
@@ -683,23 +903,30 @@ def show_notice_popup():
         st.session_state['notice_shown'] = False
 
     if not st.session_state['notice_shown']:
-        @st.dialog("📢 K-건설맵 Master 공지사항", width="large")
+        @st.dialog("📢 K-건설맵 Master 공지사항")
         def _popup():
             st.markdown("""
-                <div style="background:#1e3a8a;color:white;border-radius:12px;padding:24px;">
-                    <h3 style="color:#93c5fd;margin-top:0;">🏛️ K-건설맵 Master에 오신 것을 환영합니다!</h3>
-                    <hr style="border-color:#3b82f6;"/>
-                    <p style="font-size:15px;line-height:2.0;color:white;">
-                    📌 <b>서비스 안내</b><br>
-                    &nbsp;&nbsp;• 전국 건설공사 실시간 입찰 공고를 제공합니다.<br>
-                    &nbsp;&nbsp;• 실시간 1순위 개찰 결과를 즉시 확인하실 수 있습니다.<br>
-                    &nbsp;&nbsp;• 3년치 낙찰 데이터 기반 팩트 분석 서비스를 이용하실 수 있습니다.<br><br>
-                    📌 <b>이용 안내</b><br>
-                    &nbsp;&nbsp;• 회원가입 후 모든 기능을 무료로 이용하실 수 있습니다.<br>
-                    &nbsp;&nbsp;• 면허 등록 시 맞춤 공고 매칭 서비스를 이용하실 수 있습니다.<br><br>
-                    📌 <b>문의</b><br>
-                    &nbsp;&nbsp;• 서비스 관련 문의는 K건설챗을 이용해 주세요.
-                    </p>
+                <div style="background:#1e3a8a;color:white;border-radius:10px;padding:16px 20px;">
+                    <div style="font-size:16px;font-weight:900;color:#fde68a;margin-bottom:10px;">🏛️ K-건설맵 Master</div>
+                    <div style="font-size:13px;line-height:1.9;color:white;">
+                    ✅ 전국 실시간 입찰 공고 즉시 확인<br>
+                    ✅ 1순위 개찰 결과 15분마다 자동 업데이트<br>
+                    ✅ 3년 낙찰 데이터 기반 투찰률 히트맵<br>
+                    ✅ 발주기관별 독식업체·발주패턴 분석<br>
+                    ✅ 실제 데이터 기반 투찰가 계산기<br>
+                    ✅ 매일 맞춤 입찰 리포트 이메일 발송
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            st.markdown("")
+            st.markdown("""
+                <div style="background:#fef2f2;border:2px solid #ef4444;border-radius:8px;padding:12px 16px;text-align:center;">
+                    <div style="font-size:13px;font-weight:900;color:#dc2626;">📢 이용 안내</div>
+                    <div style="font-size:13px;color:#7f1d1d;margin-top:6px;line-height:1.8;">
+                    <b>2025년 5월 15일</b>부터<br>
+                    <b>회원가입 회원에 한하여</b> 서비스 이용이 가능합니다.<br>
+                    지금 바로 무료 회원가입 후 이용하세요!
+                    </div>
                 </div>
             """, unsafe_allow_html=True)
             st.markdown("")
@@ -809,6 +1036,7 @@ with st.sidebar:
     st.write(f"### 👷 {'👋 ' + st.session_state['user_name'] + ' 소장님' if st.session_state['logged_in'] else 'K-건설맵 메뉴'}")
     menu = st.radio("업무 선택", [
         "🏆 1순위 현황판", "📊 실시간 공고 (홈)",
+        "🧮 투찰가 계산기",
         "🔍 발주기관 분석", "🏢 업체 자가진단",
         "🤝 K-구인구직", "📁 K-건설 자료실",
         "💬 K건설챗", "📲 앱처럼 설치하기", "👤 내 정보/로그인"
@@ -933,6 +1161,9 @@ elif menu == "📊 실시간 공고 (홈)":
         if selected_row_live is not None:
             show_analysis_dialog(selected_row_live, None, mode="live")
 
+elif menu == "🧮 투찰가 계산기":
+    render_bid_calculator()
+
 elif menu == "🔍 발주기관 분석":
     st.markdown("#### 🔍 발주기관 심층 분석")
     st.markdown('<div class="guide-box">발주기관명을 입력하면 3년 실제 데이터 기반으로 투찰률 히트맵, 독식업체, 발주패턴을 분석합니다. 추정 없음.</div>', unsafe_allow_html=True)
@@ -1052,17 +1283,64 @@ elif menu == "👤 내 정보/로그인":
                 except Exception:
                     st.error("가입 실패! 이미 사용 중인 이메일이거나 비밀번호가 6자 미만입니다.")
     else:
+        # ★ 추가 2: 회원 정보 수정 + 탈퇴 기능 ★
         st.write(f"### {st.session_state['user_name']} 소장님 반갑습니다!")
+        my_tab1, my_tab2 = st.tabs(["✏️ 정보 수정", "🗑️ 회원 탈퇴"])
+
+        with my_tab1:
+            st.markdown("**회원 정보를 수정합니다.**")
+            cur_info = db.child("users").child(st.session_state['localId']).get().val() or {}
+            new_name = st.text_input("성함 수정", value=cur_info.get('name', ''))
+            new_phone = st.text_input("연락처 수정", value=cur_info.get('phone', ''))
+            new_lic  = st.multiselect("보유 면허 수정", ALL_LICENSES,
+                                      default=[l.strip() for l in cur_info.get('license', '').split(',') if l.strip() in ALL_LICENSES])
+            if st.button("✅ 정보 저장"):
+                try:
+                    db.child("users").child(st.session_state['localId']).update({
+                        "name"   : new_name,
+                        "phone"  : new_phone,
+                        "license": ", ".join(new_lic)
+                    })
+                    st.session_state['user_name']    = new_name
+                    st.session_state['user_phone']   = new_phone
+                    st.session_state['user_license'] = ", ".join(new_lic)
+                    st.success("✅ 정보가 저장되었습니다!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"저장 실패: {e}")
+
+        with my_tab2:
+            st.warning("⚠️ 탈퇴하면 모든 정보가 삭제되며 복구할 수 없습니다.")
+            confirm_pw = st.text_input("탈퇴 확인용 비밀번호 입력", type="password", key="del_pw")
+            if st.button("🗑️ 회원 탈퇴 확인", type="primary"):
+                if not confirm_pw:
+                    st.error("비밀번호를 입력해주세요.")
+                else:
+                    try:
+                        cur_info2 = db.child("users").child(st.session_state['localId']).get().val() or {}
+                        auth.sign_in_with_email_and_password(
+                            cur_info2.get('email', ''), confirm_pw)
+                        db.child("users").child(st.session_state['localId']).remove()
+                        st.session_state.clear()
+                        st.success("탈퇴 완료. 이용해 주셔서 감사합니다.")
+                        time.sleep(2)
+                        st.rerun()
+                    except Exception:
+                        st.error("비밀번호가 틀렸거나 탈퇴에 실패했습니다.")
+
+        st.markdown("---")
         if st.button("🚪 로그아웃"):
             st.session_state.clear()
             st.rerun()
 
 elif menu == "📁 K-건설 자료실":
+    # ★ 추가 3: 게시판 수정/삭제 기능 ★
     st.subheader("📁 K-건설 자료실")
     if st.session_state['logged_in']:
         with st.expander("✏️ 새 자료 등록"):
-            t_title   = st.text_input("제목")
-            t_content = st.text_area("내용")
+            t_title   = st.text_input("제목", key="post_title")
+            t_content = st.text_area("내용", key="post_content")
             if st.button("등록") and t_title and t_content:
                 db.child("posts").push({
                     "author" : st.session_state['user_name'],
@@ -1070,11 +1348,34 @@ elif menu == "📁 K-건설 자료실":
                     "time"   : datetime.now(KST).strftime("%Y-%m-%d %H:%M")
                 })
                 st.rerun()
+
     posts = db.child("posts").get().val()
     if posts:
         for k, v in reversed(list(posts.items())):
             with st.expander(f"📢 {v['title']} (작성자: {v['author']})"):
                 st.write(v['content'])
+                st.caption(f"작성: {v.get('time', '')}")
+                # 본인 글만 수정/삭제 가능
+                if st.session_state['logged_in'] and v['author'] == st.session_state['user_name']:
+                    col_e, col_d = st.columns([1, 1])
+                    with col_e:
+                        if st.button("✏️ 수정", key=f"edit_{k}"):
+                            st.session_state[f'editing_{k}'] = True
+                    with col_d:
+                        if st.button("🗑️ 삭제", key=f"del_{k}"):
+                            db.child("posts").child(k).remove()
+                            st.toast("삭제되었습니다.")
+                            time.sleep(0.5)
+                            st.rerun()
+                    if st.session_state.get(f'editing_{k}'):
+                        new_t = st.text_input("제목 수정", value=v['title'],  key=f"et_{k}")
+                        new_c = st.text_area("내용 수정", value=v['content'], key=f"ec_{k}")
+                        if st.button("💾 저장", key=f"save_{k}"):
+                            db.child("posts").child(k).update({"title": new_t, "content": new_c})
+                            st.session_state.pop(f'editing_{k}', None)
+                            st.toast("수정되었습니다.")
+                            time.sleep(0.5)
+                            st.rerun()
 
 elif menu == "💬 K건설챗":
     st.subheader("💬 실시간 현장 소통")
