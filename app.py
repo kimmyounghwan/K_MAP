@@ -30,8 +30,8 @@ st.markdown("""
         /* ── 사이드바 메뉴 간격 넓히기 ── */
         [data-testid="stSidebar"] .stRadio > div { gap: 0px !important; }
         [data-testid="stSidebar"] .stRadio label {
-            padding: 11px 10px 11px 6px !important;
-            font-size: 15px !important;
+            padding: 10px 10px 10px 6px !important;
+            font-size: 14px !important;
             font-weight: 600 !important;
             border-radius: 8px !important;
             margin-bottom: 3px !important;
@@ -42,35 +42,65 @@ st.markdown("""
             background: rgba(59,130,246,0.08) !important;
         }
 
-        .main-title { background-color: #1e3a8a; color: white; border-radius: 10px; font-weight: 900; font-size: 28px; text-align: center; padding: 20px; margin-bottom: 25px; }
-        .stat-card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; text-align: center; margin-bottom: 10px; }
-        .stat-label { font-size: 13px; color: #64748b; font-weight: 600; margin-bottom: 4px; }
-        .stat-val { font-size: 17px; font-weight: 800; color: #1e3a8a; }
-        .guide-box { background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 12px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; color: #1e3a8a; }
+        /* ── 왼쪽 « 접기 버튼: 크고 진하게 ── */
+        [data-testid="collapsedControl"] {
+            background: linear-gradient(135deg, #1e3a8a, #1d4ed8) !important;
+            border-radius: 50% !important;
+            width: 52px !important;
+            height: 52px !important;
+            border: 3px solid #fde68a !important;
+            box-shadow: 0 4px 16px rgba(30,58,138,0.7) !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        [data-testid="collapsedControl"] svg {
+            color: #fde68a !important;
+            fill: #fde68a !important;
+            width: 26px !important;
+            height: 26px !important;
+        }
+        /* ── 오른쪽 Deploy 버튼 완전 제거 ── */
+        button[kind="header"] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            overflow: hidden !important;
+        }
+        .sidebar-toggle-hint { display: none !important; }
 
-        .hit-zone { background: linear-gradient(135deg, #fef3c7, #fde68a); border: 2px solid #f59e0b; border-radius: 8px; padding: 12px; margin: 8px 0; text-align: center; font-weight: 800; font-size: 15px; color: #92400e; }
-        .insight-box { background: #1e3a8a; color: white; border-radius: 10px; padding: 15px; margin: 8px 0; text-align: center; }
-        .insight-title { font-size: 13px; font-weight: 700; margin-bottom: 6px; color: #93c5fd; }
-        .insight-val { font-size: 22px; font-weight: 900; }
+        .main-title { background-color: #1e3a8a; color: white; border-radius: 10px; font-weight: 900; font-size: 26px; text-align: center; padding: 18px; margin-bottom: 22px; }
+        .stat-card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 11px; text-align: center; margin-bottom: 10px; }
+        .stat-label { font-size: 12px; color: #64748b; font-weight: 600; margin-bottom: 4px; }
+        .stat-val { font-size: 16px; font-weight: 800; color: #1e3a8a; }
+        .guide-box { background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 11px; border-radius: 5px; margin-bottom: 14px; font-size: 13px; color: #1e3a8a; }
+
+        .hit-zone { background: linear-gradient(135deg, #fef3c7, #fde68a); border: 2px solid #f59e0b; border-radius: 8px; padding: 11px; margin: 8px 0; text-align: center; font-weight: 800; font-size: 14px; color: #92400e; }
+        .insight-box { background: #1e3a8a; color: white; border-radius: 10px; padding: 14px; margin: 8px 0; text-align: center; }
+        .insight-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; color: #93c5fd; }
+        .insight-val { font-size: 21px; font-weight: 900; }
         .similar-card { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px; margin: 5px 0; }
-        .corp-rank1 { background: linear-gradient(135deg, #fef9c3, #fde047); border: 2px solid #eab308; border-radius: 8px; padding: 10px; margin: 4px 0; font-weight: 800; font-size: 14px; }
-        .corp-rank-other { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; margin: 3px 0; font-size: 13px; }
+        .corp-rank1 { background: linear-gradient(135deg, #fef9c3, #fde047); border: 2px solid #eab308; border-radius: 8px; padding: 10px; margin: 4px 0; font-weight: 800; font-size: 13px; }
+        .corp-rank-other { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; margin: 3px 0; font-size: 12px; }
         .warn-box { background: #fef2f2; border: 2px solid #ef4444; border-radius: 8px; padding: 10px; margin: 6px 0; color: #7f1d1d; font-weight: 700; }
         .ok-box { background: #f0fdf4; border: 2px solid #22c55e; border-radius: 8px; padding: 10px; margin: 6px 0; color: #14532d; font-weight: 700; }
-        .diag-box { background: #1e3a8a; color: white; border-radius: 10px; padding: 16px; margin: 8px 0; text-align: center; }
-        .diag-title { font-size: 13px; color: #93c5fd; font-weight: 700; margin-bottom: 4px; }
-        .diag-val { font-size: 20px; font-weight: 900; }
-        .calc-result { background: linear-gradient(135deg, #1e3a8a, #1e40af); color: white; border-radius: 12px; padding: 20px; margin: 10px 0; text-align: center; }
-        .calc-price { font-size: 26px; font-weight: 900; color: #fde68a; }
-        .calc-label { font-size: 13px; color: #93c5fd; margin-bottom: 6px; }
-        .zoom-card { background: linear-gradient(135deg, #fef3c7, #fde68a); border: 2px solid #f59e0b; border-radius: 8px; padding: 10px; margin: 4px 0; text-align: center; font-weight: 800; font-size: 14px; color: #92400e; }
+        .diag-box { background: #1e3a8a; color: white; border-radius: 10px; padding: 15px; margin: 8px 0; text-align: center; }
+        .diag-title { font-size: 12px; color: #93c5fd; font-weight: 700; margin-bottom: 4px; }
+        .diag-val { font-size: 19px; font-weight: 900; }
+        .calc-result { background: linear-gradient(135deg, #1e3a8a, #1e40af); color: white; border-radius: 12px; padding: 18px; margin: 10px 0; text-align: center; }
+        .calc-price { font-size: 24px; font-weight: 900; color: #fde68a; }
+        .calc-label { font-size: 12px; color: #93c5fd; margin-bottom: 6px; }
+        .zoom-card { background: linear-gradient(135deg, #fef3c7, #fde68a); border: 2px solid #f59e0b; border-radius: 8px; padding: 10px; margin: 4px 0; text-align: center; font-weight: 800; font-size: 13px; color: #92400e; }
 
         /* ── 투찰가 계산기 히어로 배너 ── */
         .calc-hero {
             background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 40%, #1e40af 70%, #0f172a 100%);
             border-radius: 20px;
-            padding: 40px 30px 36px 30px;
-            margin-bottom: 28px;
+            padding: 36px 28px 32px 28px;
+            margin-bottom: 26px;
             text-align: center;
             position: relative;
             overflow: hidden;
@@ -97,15 +127,15 @@ st.markdown("""
             background: rgba(253,230,138,0.18);
             border: 1px solid rgba(253,230,138,0.4);
             color: #fde68a;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 800;
             letter-spacing: 2px;
             padding: 4px 14px;
             border-radius: 20px;
-            margin-bottom: 16px;
+            margin-bottom: 14px;
         }
         .calc-hero-title {
-            font-size: 34px;
+            font-size: 30px;
             font-weight: 900;
             color: #ffffff;
             line-height: 1.2;
@@ -113,9 +143,9 @@ st.markdown("""
         }
         .calc-hero-title span { color: #fde68a; }
         .calc-hero-sub {
-            font-size: 15px;
+            font-size: 14px;
             color: #93c5fd;
-            margin-bottom: 22px;
+            margin-bottom: 20px;
             line-height: 1.7;
         }
         .calc-hero-chips {
@@ -123,15 +153,15 @@ st.markdown("""
             justify-content: center;
             gap: 10px;
             flex-wrap: wrap;
-            margin-bottom: 26px;
+            margin-bottom: 24px;
         }
         .calc-hero-chip {
             background: rgba(255,255,255,0.1);
             border: 1px solid rgba(255,255,255,0.2);
             color: white;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 700;
-            padding: 6px 16px;
+            padding: 5px 14px;
             border-radius: 20px;
         }
         .calc-hero-stats {
@@ -144,12 +174,12 @@ st.markdown("""
             text-align: center;
         }
         .calc-hero-stat-num {
-            font-size: 26px;
+            font-size: 24px;
             font-weight: 900;
             color: #fde68a;
         }
         .calc-hero-stat-label {
-            font-size: 11px;
+            font-size: 10px;
             color: #93c5fd;
             margin-top: 2px;
         }
@@ -163,14 +193,14 @@ st.markdown("""
             background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
             border: 2px solid #38bdf8;
             border-radius: 16px;
-            padding: 24px;
+            padding: 22px;
             margin-bottom: 20px;
         }
         .calc-input-title {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 900;
             color: #0c4a6e;
-            margin-bottom: 16px;
+            margin-bottom: 14px;
             text-align: center;
         }
     </style>
@@ -193,6 +223,9 @@ firebaseConfig = {
 G2B_API_KEY = "13610863df3680cc4e7c70a64d752b37485535929bfa514f4ad4d71ea56e4ccb"
 SAFE_API_KEY = urllib.parse.unquote(G2B_API_KEY)
 
+# ── 관리자 이메일 목록 (소문자) ──
+ADMIN_EMAILS = {"admin@kconmap.com", "master@kconmap.com", "a02280118@naver.com"}
+
 
 @st.cache_resource
 def init_firebase():
@@ -203,9 +236,14 @@ def init_firebase():
 auth, db = init_firebase()
 
 for k, v in [('logged_in', False), ('user_name', ""), ('user_license', ""),
-              ('user_phone', ""), ('localId', ""), ('idToken', "")]:
+              ('user_phone', ""), ('localId', ""), ('idToken', ""), ('user_email', "")]:
     if k not in st.session_state:
         st.session_state[k] = v
+
+
+def is_admin():
+    """현재 로그인한 사용자가 관리자인지 확인"""
+    return st.session_state.get('user_email', '').strip().lower() in ADMIN_EMAILS
 
 
 # ==========================================
@@ -1121,7 +1159,7 @@ def show_notice_popup():
                 <div style="background:#fef2f2;border:2px solid #ef4444;border-radius:8px;padding:12px 16px;text-align:center;">
                     <div style="font-size:13px;font-weight:900;color:#dc2626;">📢 이용 안내</div>
                     <div style="font-size:13px;color:#7f1d1d;margin-top:6px;line-height:1.8;">
-                    <b>2025년 5월 15일</b>부터<br>
+                    <b>2026년 5월 15일</b>부터<br>
                     <b>회원가입 회원에 한하여</b> 서비스 이용이 가능합니다.<br>
                     지금 바로 무료 회원가입 후 이용하세요!
                     </div>
@@ -1224,14 +1262,22 @@ t_visit, u_total = get_stats()
 
 st.markdown('<div class="main-title">🏛️ K-건설맵 Master</div>', unsafe_allow_html=True)
 
-c1, c2, c3, c4 = st.columns(4)
-with c1: st.markdown(f'<div class="stat-card"><div class="stat-label">📅 오늘 날짜</div><div class="stat-val">{datetime.now(KST).strftime("%Y-%m-%d")}</div></div>', unsafe_allow_html=True)
-with c2: st.markdown(f'<div class="stat-card"><div class="stat-label">📈 누적 방문</div><div class="stat-val">{t_visit:,}명</div></div>', unsafe_allow_html=True)
-with c3: st.markdown(f'<div class="stat-card"><div class="stat-label">👥 전체 회원수</div><div class="stat-val">{u_total:,}명</div></div>', unsafe_allow_html=True)
-with c4: st.markdown(f'<div class="stat-card"><div class="stat-label">🔔 가동 상태</div><div class="stat-val" style="color:green;">정상 가동 중</div></div>', unsafe_allow_html=True)
+# ── 상단 통계 카드 (회원수는 관리자에게만 표시) ──
+if is_admin():
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: st.markdown(f'<div class="stat-card"><div class="stat-label">📅 오늘 날짜</div><div class="stat-val">{datetime.now(KST).strftime("%Y-%m-%d")}</div></div>', unsafe_allow_html=True)
+    with c2: st.markdown(f'<div class="stat-card"><div class="stat-label">📈 누적 방문</div><div class="stat-val">{t_visit:,}명</div></div>', unsafe_allow_html=True)
+    with c3: st.markdown(f'<div class="stat-card"><div class="stat-label">👥 전체 회원수 🔒</div><div class="stat-val">{u_total:,}명</div></div>', unsafe_allow_html=True)
+    with c4: st.markdown(f'<div class="stat-card"><div class="stat-label">🔔 가동 상태</div><div class="stat-val" style="color:green;">정상 가동 중</div></div>', unsafe_allow_html=True)
+else:
+    c1, c2, c3 = st.columns(3)
+    with c1: st.markdown(f'<div class="stat-card"><div class="stat-label">📅 오늘 날짜</div><div class="stat-val">{datetime.now(KST).strftime("%Y-%m-%d")}</div></div>', unsafe_allow_html=True)
+    with c2: st.markdown(f'<div class="stat-card"><div class="stat-label">📈 누적 방문</div><div class="stat-val">{t_visit:,}명</div></div>', unsafe_allow_html=True)
+    with c3: st.markdown(f'<div class="stat-card"><div class="stat-label">🔔 가동 상태</div><div class="stat-val" style="color:green;">정상 가동 중</div></div>', unsafe_allow_html=True)
 
 with st.sidebar:
     st.write(f"### 👷 {'👋 ' + st.session_state['user_name'] + ' 소장님' if st.session_state['logged_in'] else 'K-건설맵 메뉴'}")
+
     menu = st.radio("업무 선택", [
         "🏆 1순위 현황판", "📊 실시간 공고 (홈)",
         "🧮 투찰가 계산기",
@@ -1461,7 +1507,8 @@ elif menu == "👤 내 정보/로그인":
                         'user_license' : info.get('license', ''),
                         'user_phone'   : info.get('phone', ''),
                         'localId'      : user['localId'],
-                        'idToken'      : user['idToken']
+                        'idToken'      : user['idToken'],
+                        'user_email'   : le.strip().lower()
                     })
                     st.rerun()
                 except Exception:
