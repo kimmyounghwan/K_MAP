@@ -2439,8 +2439,10 @@ def render_1st_board(df_w, master_df, tab_prefix, p_key, prev_key, search_key, r
 
     if len(event.selection.rows) > 0:
         selected_row = df_page.iloc[event.selection.rows[0]]
-        det = fetch_detail(selected_row)
-        show_analysis_dialog(selected_row, det, mode="1st", master_df=master_df, tab_prefix=tab_prefix)
+        st.info(f"✅ 선택: **{str(selected_row.get('공고명',''))[:40]}**")
+        if st.button("📋 팩트 리포트 보기", key=f"btn_1st_{tab_prefix}", use_container_width=True, type="primary"):
+            det = fetch_detail(selected_row)
+            show_analysis_dialog(selected_row, det, mode="1st", master_df=master_df, tab_prefix=tab_prefix)
 
 
 def render_live_board(df_live, master_df, tab_prefix, prev_key, reg_key,
@@ -2465,48 +2467,48 @@ def render_live_board(df_live, master_df, tab_prefix, prev_key, reg_key,
     }
     show_cols = [c for c in ['공고번호', '공고일자', '공고명', '발주기관', '예산금액', '상세보기'] if c in df_f.columns]
 
-    selected_row_live = None
+    t1, t2 = st.tabs(["🌐 전체 공고", "✨ 내 면허 맞춤매칭"])
 
-    if st.session_state['logged_in']:
-        t1, t2 = st.tabs(["🌐 전체 공고", "✨ 내 면허 맞춤매칭"])
+    with t1:
+        n_all = max(1, math.ceil(len(df_f) / ROWS_PER_PAGE))
+        if p_all_key not in st.session_state:
+            st.session_state[p_all_key] = 1
+        df_p_all = df_f.iloc[(st.session_state[p_all_key]-1)*ROWS_PER_PAGE: st.session_state[p_all_key]*ROWS_PER_PAGE]
+        event_all = st.dataframe(
+            df_p_all[show_cols], use_container_width=True, hide_index=True, height=700,
+            column_config=col_cfg, selection_mode="single-row", on_select="rerun",
+            key=f"live_all_{tab_prefix}"
+        )
+        c1, c2, c3 = st.columns([3, 4, 3])
+        with c2:
+            st.selectbox(f"📄 페이지 이동 (총 {n_all}쪽)", range(1, n_all+1), key=p_all_key)
+        if len(event_all.selection.rows) > 0:
+            selected_row_live = df_p_all.iloc[event_all.selection.rows[0]]
+            st.info(f"✅ 선택: **{str(selected_row_live.get('공고명',''))[:40]}**")
+            if st.button("📋 입찰 팩트 분석 보기", key=f"btn_live_all_{tab_prefix}", use_container_width=True, type="primary"):
+                show_analysis_dialog(selected_row_live, None, mode="live", master_df=master_df, tab_prefix=tab_prefix)
 
-        with t1:
-            n_all = max(1, math.ceil(len(df_f) / ROWS_PER_PAGE))
-            if p_all_key not in st.session_state:
-                st.session_state[p_all_key] = 1
-            df_p_all = df_f.iloc[(st.session_state[p_all_key]-1)*ROWS_PER_PAGE: st.session_state[p_all_key]*ROWS_PER_PAGE]
-            event_all = st.dataframe(
-                df_p_all[show_cols], use_container_width=True, hide_index=True, height=700,
-                column_config=col_cfg, selection_mode="single-row", on_select="rerun",
-                key=f"live_all_{tab_prefix}"
-            )
-            c1, c2, c3 = st.columns([3, 4, 3])
-            with c2:
-                st.selectbox(f"📄 페이지 이동 (총 {n_all}쪽)", range(1, n_all+1), key=p_all_key)
-            if len(event_all.selection.rows) > 0:
-                selected_row_live = df_p_all.iloc[event_all.selection.rows[0]]
-
-        with t2:
-            kw = get_match_keywords(st.session_state.get('user_license', ''))
-            m_full = df_f[df_f['공고명'].str.contains('|'.join(kw), na=False)] if kw else df_f
-            n_m = max(1, math.ceil(len(m_full) / ROWS_PER_PAGE))
-            if p_m_key not in st.session_state:
-                st.session_state[p_m_key] = 1
-            df_p_m = m_full.iloc[(st.session_state[p_m_key]-1)*ROWS_PER_PAGE: st.session_state[p_m_key]*ROWS_PER_PAGE]
-            m_show_cols = [c for c in show_cols if c in df_p_m.columns]
-            event_m = st.dataframe(
-                df_p_m[m_show_cols], use_container_width=True, hide_index=True, height=700,
-                column_config=col_cfg, selection_mode="single-row", on_select="rerun",
-                key=f"live_match_{tab_prefix}"
-            )
-            c1, c2, c3 = st.columns([3, 4, 3])
-            with c2:
-                st.selectbox(f"📄 페이지 이동 (총 {n_m}쪽)", range(1, n_m+1), key=p_m_key)
-            if len(event_m.selection.rows) > 0:
-                selected_row_live = df_p_m.iloc[event_m.selection.rows[0]]
-
-    if selected_row_live is not None:
-        show_analysis_dialog(selected_row_live, None, mode="live", master_df=master_df, tab_prefix=tab_prefix)
+    with t2:
+        kw = get_match_keywords(st.session_state.get('user_license', ''))
+        m_full = df_f[df_f['공고명'].str.contains('|'.join(kw), na=False)] if kw else df_f
+        n_m = max(1, math.ceil(len(m_full) / ROWS_PER_PAGE))
+        if p_m_key not in st.session_state:
+            st.session_state[p_m_key] = 1
+        df_p_m = m_full.iloc[(st.session_state[p_m_key]-1)*ROWS_PER_PAGE: st.session_state[p_m_key]*ROWS_PER_PAGE]
+        m_show_cols = [c for c in show_cols if c in df_p_m.columns]
+        event_m = st.dataframe(
+            df_p_m[m_show_cols], use_container_width=True, hide_index=True, height=700,
+            column_config=col_cfg, selection_mode="single-row", on_select="rerun",
+            key=f"live_match_{tab_prefix}"
+        )
+        c1, c2, c3 = st.columns([3, 4, 3])
+        with c2:
+            st.selectbox(f"📄 페이지 이동 (총 {n_m}쪽)", range(1, n_m+1), key=p_m_key)
+        if len(event_m.selection.rows) > 0:
+            selected_row_live = df_p_m.iloc[event_m.selection.rows[0]]
+            st.info(f"✅ 선택: **{str(selected_row_live.get('공고명',''))[:40]}**")
+            if st.button("📋 입찰 팩트 분석 보기", key=f"btn_live_match_{tab_prefix}", use_container_width=True, type="primary"):
+                show_analysis_dialog(selected_row_live, None, mode="live", master_df=master_df, tab_prefix=tab_prefix)
 
 
 # ==========================================
@@ -2810,14 +2812,20 @@ elif main_cat == "🌍 커뮤니티·설정":
                                     use_container_width=True, hide_index=True,
                                     selection_mode="single-row", on_select="rerun", key="h_job")
                 if len(ev_h.selection.rows) > 0:
-                    show_analysis_dialog(h.iloc[ev_h.selection.rows[0]], None, mode="job")
+                    sel_h = h.iloc[ev_h.selection.rows[0]]
+                    st.info(f"✅ 선택: **{str(sel_h.get('title',''))[:40]}**")
+                    if st.button("📋 상세 보기", key="btn_job_h", use_container_width=True, type="primary"):
+                        show_analysis_dialog(sel_h, None, mode="job")
             with t2:
                 s = df_j[df_j['category'] == "🚜 일자리 찾습니다"]
                 ev_s = st.dataframe(s[['time', 'region', 'job_type', 'title', 'author']],
                                     use_container_width=True, hide_index=True,
                                     selection_mode="single-row", on_select="rerun", key="s_job")
                 if len(ev_s.selection.rows) > 0:
-                    show_analysis_dialog(s.iloc[ev_s.selection.rows[0]], None, mode="job")
+                    sel_s = s.iloc[ev_s.selection.rows[0]]
+                    st.info(f"✅ 선택: **{str(sel_s.get('title',''))[:40]}**")
+                    if st.button("📋 상세 보기", key="btn_job_s", use_container_width=True, type="primary"):
+                        show_analysis_dialog(sel_s, None, mode="job")
 
     elif menu == "📲 앱처럼 설치하기":
         st.markdown("### 📲 스마트폰 바탕화면에 앱으로 추가하기")
