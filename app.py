@@ -2940,3 +2940,6 @@ elif main_cat == "🌍 커뮤니티·설정":
                 "time": datetime.now(KST).strftime("%H:%M")
             })
             st.rerun()
+
+
+
